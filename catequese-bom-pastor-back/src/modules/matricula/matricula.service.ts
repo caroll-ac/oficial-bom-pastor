@@ -1,9 +1,19 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
 import { MatriculaDetalheResponseDto } from './dto/matricula-detalhe-response.dto';
 import { MatriculaResponseDto } from './dto/matricula-response.dto';
+import {
+  ParecerSecretariaDto,
+  ParecerSecretariaResponseDto,
+  ResultadoSecretaria,
+} from './dto/parecer-secretaria.dto';
+
+const STATUS_POR_RESULTADO: Record<ResultadoSecretaria, string> = {
+  DOCUMENTACAO_OK: 'AGUARDANDO_COORDENADOR',
+  PENDENCIA_DOCUMENTAL: 'PENDENCIA_DOCUMENTAL',
+};
 
 @Injectable()
 export class MatriculaService {
@@ -162,6 +172,59 @@ export class MatriculaService {
       id: matricula.id.toString(),
       etapa: { ...matricula.etapa, id: matricula.etapa.id.toString() },
     }));
+  }
+
+  async registrarParecerSecretaria(
+    idParam: string,
+    usuarioIdParam: string,
+    dto: ParecerSecretariaDto,
+  ): Promise<ParecerSecretariaResponseDto> {
+    const matriculaId = this.parseId(idParam, 'ID de matrícula inválido.');
+    const usuarioId = this.parseId(usuarioIdParam, 'Identificador inválido.');
+    const novoStatus = STATUS_POR_RESULTADO[dto.resultado];
+
+    return this.prisma.$transaction(async (tx) => {
+      // O filtro por PENDENTE garante que só uma análise concorrente vença.
+      const atualizadas = await tx.matricula.updateMany({
+        where: { id: matriculaId, status: 'PENDENTE' },
+        data: { status: novoStatus },
+      });
+
+      if (atualizadas.count === 0) {
+        const existente = await tx.matricula.findUnique({
+          where: { id: matriculaId },
+          select: { status: true },
+        });
+        if (!existente) {
+          throw new NotFoundException('Matrícula não encontrada.');
+        }
+        throw new ConflictException('Apenas matrículas PENDENTE podem ser analisadas.');
+      }
+
+      const decisao = await tx.matriculaDecisao.create({
+        data: {
+          matriculaId,
+          usuarioId,
+          etapa: 'SECRETARIA',
+          resultado: dto.resultado,
+          parecer: dto.parecer,
+        },
+        select: { id: true, etapa: true, resultado: true, parecer: true, decididoEm: true },
+      });
+
+      return {
+        protocolo: matriculaId.toString(),
+        status: novoStatus,
+        decisao: { ...decisao, id: decisao.id.toString() },
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  private parseId(valor: string, mensagem: string): bigint {
+    if (!/^[1-9]\d{0,18}$/.test(valor) || BigInt(valor) > 9223372036854775807n) {
+      throw new BadRequestException(mensagem);
+    }
+    return BigInt(valor);
   }
 
   async criar(dto: CreateMatriculaDto) {

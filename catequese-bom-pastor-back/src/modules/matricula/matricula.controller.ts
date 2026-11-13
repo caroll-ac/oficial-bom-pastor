@@ -7,6 +7,7 @@ import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
 import { MatriculaDetalheResponseDto } from './dto/matricula-detalhe-response.dto';
 import { MatriculaResponseDto } from './dto/matricula-response.dto';
+import { ParecerSecretariaDto, ParecerSecretariaResponseDto } from './dto/parecer-secretaria.dto';
 import { MatriculaService } from './matricula.service';
 
 @ApiTags('matriculas')
@@ -47,6 +48,22 @@ export class MatriculaController {
   @ApiResponse({ status: 404, description: 'Matrícula não encontrada' })
   buscarPorId(@Param('id') id: string): Promise<MatriculaDetalheResponseDto> {
     return this.matriculaService.buscarPorId(id);
+  }
+
+  @Post('matriculas/:id/parecer-secretaria')
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Registrar parecer da Secretaria sobre a documentação' })
+  @ApiResponse({ status: 201, type: ParecerSecretariaResponseDto })
+  @ApiResponse({ status: 400, description: 'ID ou corpo inválido' })
+  @ApiResponse({ status: 404, description: 'Matrícula não encontrada' })
+  @ApiResponse({ status: 409, description: 'Matrícula não está PENDENTE' })
+  registrarParecerSecretaria(
+    @Param('id') id: string,
+    @GetUser('id') usuarioId: string,
+    @Body() dto: ParecerSecretariaDto,
+  ): Promise<ParecerSecretariaResponseDto> {
+    return this.matriculaService.registrarParecerSecretaria(id, usuarioId, dto);
   }
 
   @Post('matriculas')
