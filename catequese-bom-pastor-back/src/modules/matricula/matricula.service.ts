@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
+import { DecisaoCoordenadorDto, DecisaoCoordenadorResponseDto } from './dto/decisao-coordenador.dto';
 import { MatriculaDetalheResponseDto } from './dto/matricula-detalhe-response.dto';
 import { MatriculaResponseDto } from './dto/matricula-response.dto';
 import {
@@ -215,6 +216,54 @@ export class MatriculaService {
       return {
         protocolo: matriculaId.toString(),
         status: novoStatus,
+        decisao: { ...decisao, id: decisao.id.toString() },
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  async registrarDecisaoCoordenador(
+    idParam: string,
+    usuarioIdParam: string,
+    dto: DecisaoCoordenadorDto,
+  ): Promise<DecisaoCoordenadorResponseDto> {
+    const matriculaId = this.parseId(idParam, 'ID de matrícula inválido.');
+    const usuarioId = this.parseId(usuarioIdParam, 'Identificador inválido.');
+
+    return this.prisma.$transaction(async (tx) => {
+      // O filtro por AGUARDANDO_COORDENADOR garante que só uma decisão concorrente vença.
+      const atualizadas = await tx.matricula.updateMany({
+        where: { id: matriculaId, status: 'AGUARDANDO_COORDENADOR' },
+        data: {
+          status: dto.resultado,
+          dataAprovacao: dto.resultado === 'APROVADA' ? new Date() : null,
+        },
+      });
+
+      if (atualizadas.count === 0) {
+        const existente = await tx.matricula.findUnique({
+          where: { id: matriculaId },
+          select: { status: true },
+        });
+        if (!existente) {
+          throw new NotFoundException('Matrícula não encontrada.');
+        }
+        throw new ConflictException('Apenas matrículas AGUARDANDO_COORDENADOR podem ser decididas.');
+      }
+
+      const decisao = await tx.matriculaDecisao.create({
+        data: {
+          matriculaId,
+          usuarioId,
+          etapa: 'COORDENADOR',
+          resultado: dto.resultado,
+          parecer: dto.parecer,
+        },
+        select: { id: true, etapa: true, resultado: true, parecer: true, decididoEm: true },
+      });
+
+      return {
+        protocolo: matriculaId.toString(),
+        status: dto.resultado,
         decisao: { ...decisao, id: decisao.id.toString() },
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

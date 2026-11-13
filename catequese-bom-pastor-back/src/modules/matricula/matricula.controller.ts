@@ -5,6 +5,7 @@ import { USER_ROLES } from '../../common/constants/user-roles';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
+import { DecisaoCoordenadorDto, DecisaoCoordenadorResponseDto } from './dto/decisao-coordenador.dto';
 import { MatriculaDetalheResponseDto } from './dto/matricula-detalhe-response.dto';
 import { MatriculaResponseDto } from './dto/matricula-response.dto';
 import { ParecerSecretariaDto, ParecerSecretariaResponseDto } from './dto/parecer-secretaria.dto';
@@ -64,6 +65,22 @@ export class MatriculaController {
     @Body() dto: ParecerSecretariaDto,
   ): Promise<ParecerSecretariaResponseDto> {
     return this.matriculaService.registrarParecerSecretaria(id, usuarioId, dto);
+  }
+
+  @Post('matriculas/:id/decisao-coordenador')
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.COORDENADOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Registrar decisão do Coordenador (aprovar ou rejeitar)' })
+  @ApiResponse({ status: 201, type: DecisaoCoordenadorResponseDto })
+  @ApiResponse({ status: 400, description: 'ID ou corpo inválido' })
+  @ApiResponse({ status: 404, description: 'Matrícula não encontrada' })
+  @ApiResponse({ status: 409, description: 'Matrícula não está AGUARDANDO_COORDENADOR' })
+  registrarDecisaoCoordenador(
+    @Param('id') id: string,
+    @GetUser('id') usuarioId: string,
+    @Body() dto: DecisaoCoordenadorDto,
+  ): Promise<DecisaoCoordenadorResponseDto> {
+    return this.matriculaService.registrarDecisaoCoordenador(id, usuarioId, dto);
   }
 
   @Post('matriculas')

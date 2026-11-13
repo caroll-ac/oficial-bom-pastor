@@ -423,6 +423,130 @@ describe('Matrícula MVP', () => {
     });
   });
 
+  describe('POST /api/matriculas/:id/decisao-coordenador', () => {
+    const url = '/api/matriculas/9007199254740995/decisao-coordenador';
+    const corpo = { resultado: 'APROVADA', parecer: 'Aprovada conforme análise.' };
+    const decididoEm = new Date('2026-02-05T09:00:00.000Z');
+    const modelosForaDoEscopo = ['usuario', 'responsavel', 'catequizando', 'passwordSetupToken'];
+
+    beforeEach(() => {
+      prisma.matricula.updateMany.mockResolvedValue({ count: 1 });
+      prisma.matriculaDecisao.create.mockImplementation(async ({ data }) => ({
+        id: 9007199254740999n,
+        etapa: data.etapa,
+        resultado: data.resultado,
+        parecer: data.parecer,
+        decididoEm,
+      }));
+    });
+
+    const enviar = (perfil: UserRole, body: unknown, rota = url) =>
+      request(app.getHttpServer()).post(rota).set('Authorization', auth([perfil], '7')).send(body as object);
+
+    it('exige autenticação e restringe a Administrador e Coordenador', async () => {
+      await request(app.getHttpServer()).post(url).send(corpo).expect(401);
+      await enviar(USER_ROLES.RESPONSAVEL, corpo).expect(403);
+      await enviar(USER_ROLES.SECRETARIA, corpo).expect(403);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['id não numérico', 'abc', corpo],
+      ['id zero', '0', corpo],
+      ['resultado inválido', '1', { ...corpo, resultado: 'DOCUMENTACAO_OK' }],
+      ['resultado ausente', '1', { parecer: 'ok' }],
+      ['parecer ausente', '1', { resultado: 'APROVADA' }],
+      ['parecer só com espaços', '1', { resultado: 'REJEITADA', parecer: '   ' }],
+      ['parecer acima de 1000 caracteres', '1', { ...corpo, parecer: 'a'.repeat(1001) }],
+      ['campo extra', '1', { ...corpo, status: 'APROVADA' }],
+    ])('rejeita com 400: %s', async (_nome, id, body) => {
+      await enviar(USER_ROLES.COORDENADOR, body, `/api/matriculas/${id}/decisao-coordenador`).expect(400);
+      expect(prisma.matricula.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('aceita parecer com exatamente 1000 caracteres', async () => {
+      await enviar(USER_ROLES.COORDENADOR, { ...corpo, parecer: 'a'.repeat(1000) }).expect(201);
+    });
+
+    it('retorna 404 quando a matrícula não existe', async () => {
+      prisma.matricula.updateMany.mockResolvedValue({ count: 0 });
+      prisma.matricula.findUnique.mockResolvedValue(null);
+      await enviar(USER_ROLES.COORDENADOR, corpo).expect(404);
+      expect(prisma.matriculaDecisao.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['PENDENTE', 'PENDENCIA_DOCUMENTAL', 'APROVADA', 'REJEITADA'])(
+      'retorna 409 quando a matrícula está %s',
+      async (status) => {
+        prisma.matricula.updateMany.mockResolvedValue({ count: 0 });
+        prisma.matricula.findUnique.mockResolvedValue({ status });
+        await enviar(USER_ROLES.COORDENADOR, corpo).expect(409);
+        expect(prisma.matriculaDecisao.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([USER_ROLES.ADMINISTRADOR, USER_ROLES.COORDENADOR])(
+      'APROVADA aprova, define dataAprovacao e registra a decisão (%s)',
+      async (perfil) => {
+        const response = await enviar(perfil, { ...corpo, parecer: '  Aprovada conforme análise.  ' }).expect(201);
+
+        expect(response.body).toEqual({
+          protocolo: '9007199254740995',
+          status: 'APROVADA',
+          decisao: {
+            id: '9007199254740999',
+            etapa: 'COORDENADOR',
+            resultado: 'APROVADA',
+            parecer: 'Aprovada conforme análise.',
+            decididoEm: '2026-02-05T09:00:00.000Z',
+          },
+        });
+        expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+        expect(prisma.matricula.updateMany).toHaveBeenCalledWith({
+          where: { id: 9007199254740995n, status: 'AGUARDANDO_COORDENADOR' },
+          data: { status: 'APROVADA', dataAprovacao: expect.any(Date) },
+        });
+        expect(prisma.matriculaDecisao.create).toHaveBeenCalledWith({
+          data: {
+            matriculaId: 9007199254740995n,
+            usuarioId: 7n,
+            etapa: 'COORDENADOR',
+            resultado: 'APROVADA',
+            parecer: 'Aprovada conforme análise.',
+          },
+          select: { id: true, etapa: true, resultado: true, parecer: true, decididoEm: true },
+        });
+      },
+    );
+
+    it('REJEITADA rejeita, zera dataAprovacao e persiste o parecer', async () => {
+      const response = await enviar(USER_ROLES.COORDENADOR, {
+        resultado: 'REJEITADA',
+        parecer: 'Idade incompatível com a etapa.',
+      }).expect(201);
+
+      expect(response.body.status).toBe('REJEITADA');
+      expect(response.body.decisao).toMatchObject({
+        etapa: 'COORDENADOR',
+        resultado: 'REJEITADA',
+        parecer: 'Idade incompatível com a etapa.',
+      });
+      expect(prisma.matricula.updateMany).toHaveBeenCalledWith({
+        where: { id: 9007199254740995n, status: 'AGUARDANDO_COORDENADOR' },
+        data: { status: 'REJEITADA', dataAprovacao: null },
+      });
+    });
+
+    it('não acessa Usuario, Responsavel, Catequizando nem PasswordSetupToken', async () => {
+      await enviar(USER_ROLES.COORDENADOR, corpo).expect(201);
+      for (const modelo of modelosForaDoEscopo) {
+        expect(prisma).not.toHaveProperty(modelo);
+      }
+    });
+  });
+
   it('cria matrícula pendente com todos os dados e responde sem expor dados pessoais', async () => {
     const response = await request(app.getHttpServer()).post('/api/matriculas').send(payload).expect(201);
     expect(response.body).toEqual({

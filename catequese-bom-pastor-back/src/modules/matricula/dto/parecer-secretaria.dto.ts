@@ -5,7 +5,7 @@ import { IsIn, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 export const RESULTADOS_SECRETARIA = ['DOCUMENTACAO_OK', 'PENDENCIA_DOCUMENTAL'] as const;
 export type ResultadoSecretaria = (typeof RESULTADOS_SECRETARIA)[number];
 
-const trim = ({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+export const trim = ({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
   const value = obj[key];
   return typeof value === 'string' ? value.trim() : value;
 };
@@ -23,7 +23,7 @@ export class ParecerSecretariaDto {
   parecer: string;
 }
 
-export class DecisaoSecretariaResponseDto {
+export class DecisaoMatriculaResponseDto {
   @ApiProperty({ example: '1' })
   id: string;
 
@@ -47,6 +47,6 @@ export class ParecerSecretariaResponseDto {
   @ApiProperty({ example: 'AGUARDANDO_COORDENADOR' })
   status: string;
 
-  @ApiProperty({ type: DecisaoSecretariaResponseDto })
-  decisao: DecisaoSecretariaResponseDto;
+  @ApiProperty({ type: DecisaoMatriculaResponseDto })
+  decisao: DecisaoMatriculaResponseDto;
 }
