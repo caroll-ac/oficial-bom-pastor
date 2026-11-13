@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
+import { MatriculaResponseDto } from './dto/matricula-response.dto';
 
 @Injectable()
 export class MatriculaService {
@@ -14,6 +15,62 @@ export class MatriculaService {
       orderBy: [{ ordem: 'asc' }, { id: 'asc' }],
     });
     return etapas.map((etapa) => ({ ...etapa, id: etapa.id.toString() }));
+  }
+
+  async listar(): Promise<MatriculaResponseDto[]> {
+    const matriculas = await this.prisma.matricula.findMany({
+      select: {
+        id: true,
+        status: true,
+        dataSolicitacao: true,
+        responsavelNome: true,
+        responsavelCpf: true,
+        responsavelParentesco: true,
+        responsavelDataNascimento: true,
+        responsavelTelefone: true,
+        responsavelWhatsapp: true,
+        responsavelEmail: true,
+        catequizandoNome: true,
+        catequizandoDataNascimento: true,
+        catequizandoEndereco: true,
+        catequizandoTelefoneEmergencia: true,
+        etapa: {
+          select: {
+            id: true,
+            nome: true,
+          },
+        },
+      },
+      orderBy: [
+        { dataSolicitacao: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    return matriculas.map((matricula) => ({
+      protocolo: matricula.id.toString(),
+      responsavel: {
+        nome: matricula.responsavelNome,
+        cpf: matricula.responsavelCpf,
+        parentesco: matricula.responsavelParentesco,
+        dataNascimento: matricula.responsavelDataNascimento,
+        telefone: matricula.responsavelTelefone,
+        whatsapp: matricula.responsavelWhatsapp,
+        email: matricula.responsavelEmail,
+      },
+      catequizando: {
+        nome: matricula.catequizandoNome,
+        dataNascimento: matricula.catequizandoDataNascimento,
+        endereco: matricula.catequizandoEndereco,
+        telefoneEmergencia: matricula.catequizandoTelefoneEmergencia,
+      },
+      etapa: {
+        id: matricula.etapa.id.toString(),
+        nome: matricula.etapa.nome,
+      },
+      status: matricula.status,
+      dataSolicitacao: matricula.dataSolicitacao,
+    }));
   }
 
   async listarMinhas(usuarioId: string) {

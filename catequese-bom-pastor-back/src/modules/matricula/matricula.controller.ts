@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { USER_ROLES } from '../../common/constants/user-roles';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
+import { MatriculaResponseDto } from './dto/matricula-response.dto';
 import { MatriculaService } from './matricula.service';
 
 @ApiTags('matriculas')
@@ -18,6 +19,15 @@ export class MatriculaController {
   @ApiResponse({ status: 200, description: 'Etapas ativas ordenadas' })
   listarEtapas() {
     return this.matriculaService.listarEtapas();
+  }
+
+  @Get('matriculas')
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA, USER_ROLES.COORDENADOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Listar matrículas para análise' })
+  @ApiResponse({ status: 200, type: [MatriculaResponseDto] })
+  listar(): Promise<MatriculaResponseDto[]> {
+    return this.matriculaService.listar();
   }
 
   @Get('matriculas/minhas')
