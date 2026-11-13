@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-class ResponsavelMatriculaResponseDto {
+export class ResponsavelMatriculaResponseDto {
   @ApiProperty()
   nome: string;
 
@@ -23,7 +23,7 @@ class ResponsavelMatriculaResponseDto {
   email: string;
 }
 
-class CatequizandoMatriculaResponseDto {
+export class CatequizandoMatriculaResponseDto {
   @ApiProperty()
   nome: string;
 
@@ -37,7 +37,7 @@ class CatequizandoMatriculaResponseDto {
   telefoneEmergencia: string;
 }
 
-class EtapaMatriculaResponseDto {
+export class EtapaMatriculaResponseDto {
   @ApiProperty({ example: '1' })
   id: string;
 

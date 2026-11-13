@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
+import { MatriculaDetalheResponseDto } from './dto/matricula-detalhe-response.dto';
 import { MatriculaResponseDto } from './dto/matricula-response.dto';
 
 @Injectable()
@@ -71,6 +72,77 @@ export class MatriculaService {
       status: matricula.status,
       dataSolicitacao: matricula.dataSolicitacao,
     }));
+  }
+
+  async buscarPorId(idParam: string): Promise<MatriculaDetalheResponseDto> {
+    if (!/^[1-9]\d{0,18}$/.test(idParam) || BigInt(idParam) > 9223372036854775807n) {
+      throw new BadRequestException('ID de matrícula inválido.');
+    }
+
+    const matricula = await this.prisma.matricula.findUnique({
+      where: { id: BigInt(idParam) },
+      select: {
+        id: true,
+        status: true,
+        dataSolicitacao: true,
+        responsavelNome: true,
+        responsavelCpf: true,
+        responsavelParentesco: true,
+        responsavelDataNascimento: true,
+        responsavelTelefone: true,
+        responsavelWhatsapp: true,
+        responsavelEmail: true,
+        catequizandoNome: true,
+        catequizandoDataNascimento: true,
+        catequizandoEndereco: true,
+        catequizandoTelefoneEmergencia: true,
+        etapa: { select: { id: true, nome: true } },
+        documentos: {
+          select: {
+            id: true,
+            nomeArquivo: true,
+            tipoDocumento: true,
+            status: true,
+            parecer: true,
+            dataEnvio: true,
+          },
+          orderBy: { id: 'asc' },
+        },
+      },
+    });
+    if (!matricula) {
+      throw new NotFoundException('Matrícula não encontrada.');
+    }
+
+    return {
+      protocolo: matricula.id.toString(),
+      responsavel: {
+        nome: matricula.responsavelNome,
+        cpf: matricula.responsavelCpf,
+        parentesco: matricula.responsavelParentesco,
+        dataNascimento: matricula.responsavelDataNascimento,
+        telefone: matricula.responsavelTelefone,
+        whatsapp: matricula.responsavelWhatsapp,
+        email: matricula.responsavelEmail,
+      },
+      catequizando: {
+        nome: matricula.catequizandoNome,
+        dataNascimento: matricula.catequizandoDataNascimento,
+        endereco: matricula.catequizandoEndereco,
+        telefoneEmergencia: matricula.catequizandoTelefoneEmergencia,
+      },
+      etapa: { id: matricula.etapa.id.toString(), nome: matricula.etapa.nome },
+      status: matricula.status,
+      dataSolicitacao: matricula.dataSolicitacao,
+      documentos: matricula.documentos.map((documento) => ({
+        id: documento.id.toString(),
+        nomeArquivo: documento.nomeArquivo,
+        tipoDocumento: documento.tipoDocumento,
+        status: documento.status,
+        parecer: documento.parecer,
+        dataEnvio: documento.dataEnvio,
+      })),
+    };
   }
 
   async listarMinhas(usuarioId: string) {

@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { USER_ROLES } from '../../common/constants/user-roles';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateMatriculaDto } from './dto/create-matricula.dto';
+import { MatriculaDetalheResponseDto } from './dto/matricula-detalhe-response.dto';
 import { MatriculaResponseDto } from './dto/matricula-response.dto';
 import { MatriculaService } from './matricula.service';
 
@@ -35,6 +36,17 @@ export class MatriculaController {
   @ApiOperation({ summary: 'Listar matrículas aprovadas do responsável autenticado' })
   minhas(@GetUser('id') usuarioId: string) {
     return this.matriculaService.listarMinhas(usuarioId);
+  }
+
+  @Get('matriculas/:id')
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA, USER_ROLES.COORDENADOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Detalhar matrícula com documentos' })
+  @ApiResponse({ status: 200, type: MatriculaDetalheResponseDto })
+  @ApiResponse({ status: 400, description: 'ID inválido' })
+  @ApiResponse({ status: 404, description: 'Matrícula não encontrada' })
+  buscarPorId(@Param('id') id: string): Promise<MatriculaDetalheResponseDto> {
+    return this.matriculaService.buscarPorId(id);
   }
 
   @Post('matriculas')

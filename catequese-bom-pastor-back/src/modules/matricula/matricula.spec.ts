@@ -17,7 +17,7 @@ describe('Matrícula MVP', () => {
   const jwt = new JwtService();
   const prisma = {
     etapaCatequetica: { findMany: jest.fn(), findFirst: jest.fn() },
-    matricula: { create: jest.fn(), findMany: jest.fn() },
+    matricula: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
     $transaction: jest.fn(),
   };
   const token = (perfis: UserRole[], id = '42') => jwt.sign(
@@ -170,6 +170,144 @@ describe('Matrícula MVP', () => {
       });
     },
   );
+
+  describe('GET /api/matriculas/:id', () => {
+    const registro = {
+      id: 9007199254740995n,
+      status: 'PENDENTE',
+      dataSolicitacao: new Date('2026-02-03T10:30:00.000Z'),
+      responsavelNome: 'Maria Silva',
+      responsavelCpf: '123.456.789-00',
+      responsavelParentesco: 'Mãe',
+      responsavelDataNascimento: new Date('1980-05-10T00:00:00.000Z'),
+      responsavelTelefone: '11999999999',
+      responsavelWhatsapp: '11999999999',
+      responsavelEmail: 'maria@example.com',
+      catequizandoNome: 'Ana Silva',
+      catequizandoDataNascimento: new Date('2015-03-20T00:00:00.000Z'),
+      catequizandoEndereco: 'Rua Exemplo, 10',
+      catequizandoTelefoneEmergencia: '11988888888',
+      etapa: { id: 9007199254740993n, nome: 'Primeira Eucaristia I' },
+      documentos: [
+        {
+          id: 9007199254740996n,
+          nomeArquivo: 'certidao.pdf',
+          tipoDocumento: 'CERTIDAO_NASCIMENTO',
+          status: 'PENDENTE',
+          parecer: null,
+          dataEnvio: new Date('2026-02-03T10:30:00.000Z'),
+        },
+        {
+          id: 9007199254740997n,
+          nomeArquivo: 'endereco.pdf',
+          tipoDocumento: 'COMPROVANTE_ENDERECO',
+          status: 'PENDENTE',
+          parecer: null,
+          dataEnvio: null,
+        },
+      ],
+    };
+
+    it('exige autenticação e restringe o detalhe à equipe responsável', async () => {
+      await request(app.getHttpServer()).get('/api/matriculas/1').expect(401);
+      await request(app.getHttpServer()).get('/api/matriculas/1')
+        .set('Authorization', auth([USER_ROLES.RESPONSAVEL]))
+        .expect(403);
+      expect(prisma.matricula.findUnique).not.toHaveBeenCalled();
+    });
+
+    it.each(['abc', '0', '-1', '1.5', '9223372036854775808'])('rejeita id inválido %s com 400', async (id) => {
+      await request(app.getHttpServer()).get(`/api/matriculas/${id}`)
+        .set('Authorization', auth([USER_ROLES.SECRETARIA]))
+        .expect(400);
+      expect(prisma.matricula.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('não captura /matriculas/minhas como id', async () => {
+      await request(app.getHttpServer()).get('/api/matriculas/minhas')
+        .set('Authorization', auth([USER_ROLES.SECRETARIA]))
+        .expect(403);
+      expect(prisma.matricula.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('retorna 404 quando a matrícula não existe', async () => {
+      prisma.matricula.findUnique.mockResolvedValue(null);
+      await request(app.getHttpServer()).get('/api/matriculas/99')
+        .set('Authorization', auth([USER_ROLES.SECRETARIA]))
+        .expect(404);
+    });
+
+    it.each([USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA, USER_ROLES.COORDENADOR])(
+      'detalha a matrícula para %s com BigInt serializado e sem campos internos',
+      async (perfil) => {
+        prisma.matricula.findUnique.mockResolvedValue(registro);
+
+        const response = await request(app.getHttpServer()).get('/api/matriculas/9007199254740995')
+          .set('Authorization', auth([perfil]))
+          .expect(200);
+
+        expect(response.body).toEqual({
+          protocolo: '9007199254740995',
+          responsavel: {
+            nome: 'Maria Silva',
+            cpf: '123.456.789-00',
+            parentesco: 'Mãe',
+            dataNascimento: '1980-05-10T00:00:00.000Z',
+            telefone: '11999999999',
+            whatsapp: '11999999999',
+            email: 'maria@example.com',
+          },
+          catequizando: {
+            nome: 'Ana Silva',
+            dataNascimento: '2015-03-20T00:00:00.000Z',
+            endereco: 'Rua Exemplo, 10',
+            telefoneEmergencia: '11988888888',
+          },
+          etapa: { id: '9007199254740993', nome: 'Primeira Eucaristia I' },
+          status: 'PENDENTE',
+          dataSolicitacao: '2026-02-03T10:30:00.000Z',
+          documentos: [
+            {
+              id: '9007199254740996',
+              nomeArquivo: 'certidao.pdf',
+              tipoDocumento: 'CERTIDAO_NASCIMENTO',
+              status: 'PENDENTE',
+              parecer: null,
+              dataEnvio: '2026-02-03T10:30:00.000Z',
+            },
+            {
+              id: '9007199254740997',
+              nomeArquivo: 'endereco.pdf',
+              tipoDocumento: 'COMPROVANTE_ENDERECO',
+              status: 'PENDENTE',
+              parecer: null,
+              dataEnvio: null,
+            },
+          ],
+        });
+        expect(response.body).not.toHaveProperty('observacao');
+        expect(response.body).not.toHaveProperty('decisoes');
+        expect(response.body).not.toHaveProperty('dataAprovacao');
+        expect(response.body).not.toHaveProperty('responsavelId');
+      },
+    );
+
+    it('consulta uma única vez com documentos ordenados por id e sem campos internos', async () => {
+      prisma.matricula.findUnique.mockResolvedValue(registro);
+      await request(app.getHttpServer()).get('/api/matriculas/9007199254740995')
+        .set('Authorization', auth([USER_ROLES.SECRETARIA]))
+        .expect(200);
+
+      expect(prisma.matricula.findUnique).toHaveBeenCalledTimes(1);
+      const args = prisma.matricula.findUnique.mock.calls[0][0];
+      expect(args.where).toEqual({ id: 9007199254740995n });
+      expect(args.select.documentos.orderBy).toEqual({ id: 'asc' });
+      expect(args.select.etapa).toEqual({ select: { id: true, nome: true } });
+      for (const campo of ['observacao', 'dataAprovacao', 'responsavelId', 'decisoes', 'responsavel', 'catequizando']) {
+        expect(args.select).not.toHaveProperty(campo);
+      }
+    });
+  });
 
   it('cria matrícula pendente com todos os dados e responde sem expor dados pessoais', async () => {
     const response = await request(app.getHttpServer()).post('/api/matriculas').send(payload).expect(201);
