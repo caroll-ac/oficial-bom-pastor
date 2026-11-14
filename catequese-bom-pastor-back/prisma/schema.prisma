@@ -3,19 +3,19 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model Usuario {
   id                        BigInt                     @id @default(autoincrement())
-  nome                      String                     @db.VarChar(150)
-  email                     String                     @unique(map: "email") @db.VarChar(150)
-  senha                     String                     @db.VarChar(255)
-  telefone                  String?                    @db.VarChar(20)
+  nome                      String                    
+  email                     String                     @unique(map: "email")
+  senha                     String                    
+  telefone                  String?                   
   ativo                     Boolean?                   @default(true)
-  dataCadastro              DateTime?                  @default(now()) @map("data_cadastro") @db.DateTime(0)
-  ultimoAcesso              DateTime?                  @map("ultimo_acesso") @db.DateTime(0)
+  dataCadastro              DateTime?                  @default(now()) @map("data_cadastro")
+  ultimoAcesso              DateTime?                  @map("ultimo_acesso")
   primeiroAcesso            Boolean                    @default(false) @map("primeiro_acesso")
   catequista                Catequista?
   comunicados               Comunicado[]
@@ -32,8 +32,8 @@ model Usuario {
 
 model Perfil {
   id        BigInt          @id @default(autoincrement())
-  nome      String          @unique(map: "nome") @db.VarChar(50)
-  descricao String?         @db.VarChar(255)
+  nome      String          @unique(map: "nome")
+  descricao String?        
   usuarios  UsuarioPerfil[]
 
   @@map("perfil")
@@ -46,15 +46,15 @@ model UsuarioPerfil {
   usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_usuario_perfil_usuario")
 
   @@id([usuarioId, perfilId])
-  @@index([perfilId], map: "fk_usuario_perfil_perfil")
+  @@index([perfilId], map: "idx_usuario_perfil_perfil_id")
   @@map("usuario_perfil")
 }
 
 model Responsavel {
   id            BigInt         @id @default(autoincrement())
-  usuarioId     BigInt         @unique(map: "usuario_id") @map("usuario_id")
-  cpf           String         @db.VarChar(14)
-  parentesco    String?        @db.VarChar(50)
+  usuarioId     BigInt         @unique @map("usuario_id")
+  cpf           String        
+  parentesco    String?       
   catequizandos Catequizando[]
   matriculas    Matricula[]
   usuario       Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_responsavel_usuario")
@@ -64,9 +64,9 @@ model Responsavel {
 
 model Catequista {
   id                        BigInt                     @id @default(autoincrement())
-  usuarioId                 BigInt                     @unique(map: "usuario_id") @map("usuario_id")
-  formacao                  String?                    @db.VarChar(150)
-  dataIngresso              DateTime?                  @map("data_ingresso") @db.Date
+  usuarioId                 BigInt                     @unique @map("usuario_id")
+  formacao                  String?                   
+  dataIngresso              DateTime?                  @map("data_ingresso")
   usuario                   Usuario                    @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_catequista_usuario")
   disponibilizacoesConteudo DisponibilizacaoConteudo[]
   turmas                    TurmaCatequista[]
@@ -76,22 +76,22 @@ model Catequista {
 
 model Matricula {
   id                             BigInt             @id @default(autoincrement())
-  dataSolicitacao                DateTime?          @default(now()) @map("data_solicitacao") @db.DateTime(0)
-  status                         String             @db.VarChar(30)
-  observacao                     String?            @db.Text
-  dataAprovacao                  DateTime?          @map("data_aprovacao") @db.DateTime(0)
+  dataSolicitacao                DateTime?          @default(now()) @map("data_solicitacao")
+  status                         String            
+  observacao                     String?           
+  dataAprovacao                  DateTime?          @map("data_aprovacao")
   responsavelId                  BigInt?            @map("responsavel_id")
-  responsavelNome                String             @map("responsavel_nome") @db.VarChar(150)
-  responsavelCpf                 String             @map("responsavel_cpf") @db.VarChar(14)
-  responsavelParentesco          String             @map("responsavel_parentesco") @db.VarChar(50)
-  responsavelDataNascimento      DateTime           @map("responsavel_data_nascimento") @db.Date
-  responsavelTelefone            String             @map("responsavel_telefone") @db.VarChar(20)
-  responsavelWhatsapp            String             @map("responsavel_whatsapp") @db.VarChar(20)
-  responsavelEmail               String             @map("responsavel_email") @db.VarChar(150)
-  catequizandoNome               String             @map("catequizando_nome") @db.VarChar(150)
-  catequizandoDataNascimento     DateTime           @map("catequizando_data_nascimento") @db.Date
-  catequizandoEndereco           String             @map("catequizando_endereco") @db.Text
-  catequizandoTelefoneEmergencia String             @map("catequizando_telefone_emergencia") @db.VarChar(20)
+  responsavelNome                String             @map("responsavel_nome")
+  responsavelCpf                 String             @map("responsavel_cpf")
+  responsavelParentesco          String             @map("responsavel_parentesco")
+  responsavelDataNascimento      DateTime           @map("responsavel_data_nascimento")
+  responsavelTelefone            String             @map("responsavel_telefone")
+  responsavelWhatsapp            String             @map("responsavel_whatsapp")
+  responsavelEmail               String             @map("responsavel_email")
+  catequizandoNome               String             @map("catequizando_nome")
+  catequizandoDataNascimento     DateTime           @map("catequizando_data_nascimento")
+  catequizandoEndereco           String             @map("catequizando_endereco")
+  catequizandoTelefoneEmergencia String             @map("catequizando_telefone_emergencia")
   etapaId                        BigInt             @map("etapa_id")
   catequizando                   Catequizando?
   documentos                     Documento[]
@@ -99,8 +99,8 @@ model Matricula {
   responsavel                    Responsavel?       @relation(fields: [responsavelId], references: [id], onUpdate: NoAction, map: "fk_matricula_responsavel")
   decisoes                       MatriculaDecisao[]
 
-  @@index([responsavelId], map: "fk_matricula_responsavel")
-  @@index([etapaId], map: "fk_matricula_etapa")
+  @@index([responsavelId], map: "idx_matricula_responsavel")
+  @@index([etapaId], map: "idx_matricula_etapa")
   @@map("matricula")
 }
 
@@ -108,10 +108,10 @@ model MatriculaDecisao {
   id          BigInt    @id @default(autoincrement())
   matriculaId BigInt    @map("matricula_id")
   usuarioId   BigInt    @map("usuario_id")
-  etapa       String    @db.VarChar(20)
-  resultado   String    @db.VarChar(30)
-  parecer     String?   @db.Text
-  decididoEm  DateTime  @default(now()) @map("decidido_em") @db.DateTime(0)
+  etapa       String   
+  resultado   String   
+  parecer     String?  
+  decididoEm  DateTime  @default(now()) @map("decidido_em")
   matricula   Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_matricula_decisao_matricula")
   usuario     Usuario   @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_matricula_decisao_usuario")
 
@@ -123,10 +123,10 @@ model MatriculaDecisao {
 model PasswordSetupToken {
   id        BigInt             @id @default(autoincrement())
   usuarioId BigInt             @map("usuario_id")
-  tokenHash String             @unique(map: "uk_password_setup_token_hash") @map("token_hash") @db.VarChar(255)
-  expiraEm  DateTime           @map("expira_em") @db.DateTime(0)
-  usadoEm   DateTime?          @map("usado_em") @db.DateTime(0)
-  criadoEm  DateTime           @default(now()) @map("criado_em") @db.DateTime(0)
+  tokenHash String             @unique(map: "uk_password_setup_token_hash") @map("token_hash")
+  expiraEm  DateTime           @map("expira_em")
+  usadoEm   DateTime?          @map("usado_em")
+  criadoEm  DateTime           @default(now()) @map("criado_em")
   tipo      TipoPasswordSetup?
   usuario   Usuario            @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_password_setup_token_usuario")
 
@@ -136,16 +136,16 @@ model PasswordSetupToken {
 
 model Catequizando {
   id                 BigInt                  @id @default(autoincrement())
-  matriculaId        BigInt?                 @unique(map: "matricula_id") @map("matricula_id")
+  matriculaId        BigInt?                 @unique @map("matricula_id")
   responsavelId      BigInt                  @map("responsavel_id")
   turmaId            BigInt?                 @map("turma_id")
-  nome               String                  @db.VarChar(150)
-  dataNascimento     DateTime                @map("data_nascimento") @db.Date
-  sexo               String?                 @db.VarChar(20)
-  endereco           String?                 @db.Text
-  telefoneEmergencia String?                 @map("telefone_emergencia") @db.VarChar(20)
-  situacao           String?                 @db.VarChar(50)
-  dataIngresso       DateTime?               @map("data_ingresso") @db.Date
+  nome               String                 
+  dataNascimento     DateTime                @map("data_nascimento")
+  sexo               String?                
+  endereco           String?                
+  telefoneEmergencia String?                 @map("telefone_emergencia")
+  situacao           String?                
+  dataIngresso       DateTime?               @map("data_ingresso")
   matricula          Matricula?              @relation(fields: [matriculaId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_catequizando_matricula")
   responsavel        Responsavel             @relation(fields: [responsavelId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_catequizando_responsavel")
   turma              Turma?                  @relation(fields: [turmaId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_catequizando_turma")
@@ -154,18 +154,18 @@ model Catequizando {
   participacoes      ParticipacaoEvento[]
   sacramentos        Sacramento[]
 
-  @@index([responsavelId], map: "fk_catequizando_responsavel")
-  @@index([turmaId], map: "fk_catequizando_turma")
+  @@index([responsavelId], map: "idx_catequizando_responsavel")
+  @@index([turmaId], map: "idx_catequizando_turma")
   @@map("catequizando")
 }
 
 model Turma {
   id            BigInt                @id @default(autoincrement())
   etapaId       BigInt                @map("etapa_id")
-  nome          String                @db.VarChar(150)
+  nome          String               
   ano           Int
-  horario       String?               @db.VarChar(50)
-  local         String?               @db.VarChar(150)
+  horario       String?              
+  local         String?              
   ativa         Boolean?              @default(true)
   catequizandos Catequizando[]
   comunicados   Comunicado[]
@@ -174,14 +174,14 @@ model Turma {
   etapa         EtapaCatequetica      @relation(fields: [etapaId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_turma_etapa")
   catequistas   TurmaCatequista[]
 
-  @@index([etapaId], map: "fk_turma_etapa")
+  @@index([etapaId], map: "idx_turma_etapa")
   @@map("turma")
 }
 
 model EtapaCatequetica {
   id         BigInt          @id @default(autoincrement())
-  nome       String          @db.VarChar(150)
-  descricao  String?         @db.Text
+  nome       String         
+  descricao  String?        
   ordem      Int
   ativa      Boolean?        @default(true)
   conteudos  EtapaConteudo[]
@@ -194,29 +194,29 @@ model EtapaCatequetica {
 model Documento {
   id            BigInt    @id @default(autoincrement())
   matriculaId   BigInt    @map("matricula_id")
-  nomeArquivo   String    @map("nome_arquivo") @db.VarChar(255)
-  tipoDocumento String    @map("tipo_documento") @db.VarChar(100)
-  status        String    @db.VarChar(30)
-  parecer       String?   @db.Text
-  dataEnvio     DateTime? @default(now()) @map("data_envio") @db.DateTime(0)
+  nomeArquivo   String    @map("nome_arquivo")
+  tipoDocumento String    @map("tipo_documento")
+  status        String   
+  parecer       String?  
+  dataEnvio     DateTime? @default(now()) @map("data_envio")
   matricula     Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_documento_matricula")
 
-  @@index([matriculaId], map: "fk_documento_matricula")
+  @@index([matriculaId], map: "idx_documento_matricula")
   @@map("documento")
 }
 
 model Evento {
   id            BigInt               @id @default(autoincrement())
   turmaId       BigInt?              @map("turma_id")
-  titulo        String               @db.VarChar(200)
-  descricao     String?              @db.Text
-  dataEvento    DateTime             @map("data_evento") @db.DateTime(0)
-  local         String?              @db.VarChar(150)
+  titulo        String              
+  descricao     String?             
+  dataEvento    DateTime             @map("data_evento")
+  local         String?             
   obrigatorio   Boolean?             @default(true)
   turma         Turma?               @relation(fields: [turmaId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_evento_turma")
   participacoes ParticipacaoEvento[]
 
-  @@index([turmaId], map: "fk_evento_turma")
+  @@index([turmaId], map: "idx_evento_turma")
   @@map("evento")
 }
 
@@ -224,15 +224,15 @@ model Comunicado {
   id             BigInt    @id @default(autoincrement())
   usuarioId      BigInt    @map("usuario_id")
   turmaId        BigInt?   @map("turma_id")
-  tipoComunicado String    @map("tipo_comunicado") @db.VarChar(20)
-  titulo         String    @db.VarChar(200)
-  conteudo       String    @db.Text
-  dataPublicacao DateTime? @default(now()) @map("data_publicacao") @db.DateTime(0)
+  tipoComunicado String    @map("tipo_comunicado")
+  titulo         String   
+  conteudo       String   
+  dataPublicacao DateTime? @default(now()) @map("data_publicacao")
   turma          Turma?    @relation(fields: [turmaId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_comunicado_turma")
   usuario        Usuario   @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_comunicado_usuario")
 
-  @@index([usuarioId], map: "fk_comunicado_usuario")
-  @@index([turmaId], map: "fk_comunicado_turma")
+  @@index([usuarioId], map: "idx_comunicado_usuario")
+  @@index([turmaId], map: "idx_comunicado_turma")
   @@map("comunicado")
 }
 
@@ -240,22 +240,22 @@ model Frequencia {
   id             BigInt              @id @default(autoincrement())
   catequizandoId BigInt              @map("catequizando_id")
   encontroId     BigInt              @map("encontro_id")
-  status         String              @db.VarChar(30)
-  dataRegistro   DateTime?           @default(now()) @map("data_registro") @db.DateTime(0)
+  status         String             
+  dataRegistro   DateTime?           @default(now()) @map("data_registro")
   catequizando   Catequizando        @relation(fields: [catequizandoId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_freq_catequizando")
   encontro       EncontroCatequetico @relation(fields: [encontroId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_freq_encontro")
   justificativas Justificativa[]
 
   @@unique([catequizandoId, encontroId], map: "uk_frequencia")
-  @@index([encontroId], map: "fk_freq_encontro")
+  @@index([encontroId], map: "idx_freq_encontro")
   @@map("frequencia")
 }
 
 model Reposicao {
   id            BigInt                  @id @default(autoincrement())
-  data          DateTime                @db.Date
-  local         String?                 @db.VarChar(150)
-  observacao    String?                 @db.Text
+  data          DateTime               
+  local         String?                
+  observacao    String?                
   catequizandos CatequizandoReposicao[]
 
   @@map("reposicao")
@@ -264,47 +264,47 @@ model Reposicao {
 model Justificativa {
   id                 BigInt     @id @default(autoincrement())
   frequenciaId       BigInt     @map("frequencia_id")
-  motivo             String     @db.Text
-  arquivoComprovante String?    @map("arquivo_comprovante") @db.VarChar(255)
-  analise            String?    @db.Text
-  status             String?    @default("PENDENTE") @db.VarChar(30)
-  dataEnvio          DateTime?  @default(now()) @map("data_envio") @db.DateTime(0)
+  motivo             String    
+  arquivoComprovante String?    @map("arquivo_comprovante")
+  analise            String?   
+  status             String?    @default("PENDENTE")
+  dataEnvio          DateTime?  @default(now()) @map("data_envio")
   frequencia         Frequencia @relation(fields: [frequenciaId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_justificativa_frequencia")
 
-  @@index([frequenciaId], map: "fk_justificativa_frequencia")
+  @@index([frequenciaId], map: "idx_justificativa_frequencia")
   @@map("justificativa")
 }
 
 model Sacramento {
   id              BigInt       @id @default(autoincrement())
   catequizandoId  BigInt       @map("catequizando_id")
-  tipo            String       @db.VarChar(50)
-  dataRecebimento DateTime?    @map("data_recebimento") @db.Date
-  paroquia        String?      @db.VarChar(150)
-  comprovante     String?      @db.VarChar(255)
+  tipo            String      
+  dataRecebimento DateTime?    @map("data_recebimento")
+  paroquia        String?     
+  comprovante     String?     
   catequizando    Catequizando @relation(fields: [catequizandoId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_sacramento_catequizando")
 
-  @@index([catequizandoId], map: "fk_sacramento_catequizando")
+  @@index([catequizandoId], map: "idx_sacramento_catequizando")
   @@map("sacramento")
 }
 
 model MaterialApoio {
   id         BigInt              @id @default(autoincrement())
   conteudoId BigInt              @map("conteudo_id")
-  titulo     String              @db.VarChar(150)
-  categoria  String?             @db.VarChar(100)
-  arquivo    String?             @db.VarChar(255)
+  titulo     String             
+  categoria  String?            
+  arquivo    String?            
   conteudo   ConteudoCatequetico @relation(fields: [conteudoId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_material_conteudo")
 
-  @@index([conteudoId], map: "fk_material_conteudo")
+  @@index([conteudoId], map: "idx_material_conteudo")
   @@map("material_apoio")
 }
 
 model ConteudoCatequetico {
   id                BigInt                     @id @default(autoincrement())
-  titulo            String                     @db.VarChar(200)
-  descricao         String?                    @db.Text
-  dataCriacao       DateTime?                  @default(now()) @map("data_criacao") @db.DateTime(0)
+  titulo            String                    
+  descricao         String?                   
+  dataCriacao       DateTime?                  @default(now()) @map("data_criacao")
   disponibilizacoes DisponibilizacaoConteudo[]
   encontros         EncontroCatequetico[]
   etapas            EtapaConteudo[]
@@ -318,16 +318,16 @@ model DisponibilizacaoConteudo {
   conteudoId           BigInt              @map("conteudo_id")
   catequistaId         BigInt              @map("catequista_id")
   usuarioLiberadorId   BigInt              @map("usuario_liberador_id")
-  dataDisponibilizacao DateTime?           @default(now()) @map("data_disponibilizacao") @db.DateTime(0)
+  dataDisponibilizacao DateTime?           @default(now()) @map("data_disponibilizacao")
   ativo                Boolean?            @default(true)
-  observacao           String?             @db.Text
+  observacao           String?            
   catequista           Catequista          @relation(fields: [catequistaId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disp_catequista")
   conteudo             ConteudoCatequetico @relation(fields: [conteudoId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disp_conteudo")
   usuarioLiberador     Usuario             @relation(fields: [usuarioLiberadorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disp_usuario")
 
-  @@index([conteudoId], map: "fk_disp_conteudo")
-  @@index([catequistaId], map: "fk_disp_catequista")
-  @@index([usuarioLiberadorId], map: "fk_disp_usuario")
+  @@index([conteudoId], map: "idx_disp_conteudo")
+  @@index([catequistaId], map: "idx_disp_catequista")
+  @@index([usuarioLiberadorId], map: "idx_disp_usuario")
   @@map("disponibilizacao_conteudo")
 }
 
@@ -335,15 +335,15 @@ model EncontroCatequetico {
   id          BigInt              @id @default(autoincrement())
   turmaId     BigInt              @map("turma_id")
   conteudoId  BigInt              @map("conteudo_id")
-  data        DateTime            @db.Date
-  tema        String?             @db.VarChar(200)
-  observacoes String?             @db.Text
+  data        DateTime           
+  tema        String?            
+  observacoes String?            
   conteudo    ConteudoCatequetico @relation(fields: [conteudoId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_encontro_conteudo")
   turma       Turma               @relation(fields: [turmaId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_encontro_turma")
   frequencias Frequencia[]
 
-  @@index([turmaId], map: "fk_encontro_turma")
-  @@index([conteudoId], map: "fk_encontro_conteudo")
+  @@index([turmaId], map: "idx_encontro_turma")
+  @@index([conteudoId], map: "idx_encontro_conteudo")
   @@map("encontro_catequetico")
 }
 
@@ -354,7 +354,7 @@ model EtapaConteudo {
   etapa      EtapaCatequetica    @relation(fields: [etapaId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ec_etapa")
 
   @@id([etapaId, conteudoId])
-  @@index([conteudoId], map: "fk_ec_conteudo")
+  @@index([conteudoId], map: "idx_ec_conteudo")
   @@map("etapa_conteudo")
 }
 
@@ -366,7 +366,7 @@ model ParticipacaoEvento {
   evento         Evento       @relation(fields: [eventoId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pe_evento")
 
   @@id([eventoId, catequizandoId])
-  @@index([catequizandoId], map: "fk_pe_catequizando")
+  @@index([catequizandoId], map: "idx_pe_catequizando")
   @@map("participacao_evento")
 }
 
@@ -377,7 +377,7 @@ model CatequizandoReposicao {
   reposicao      Reposicao    @relation(fields: [reposicaoId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_cr_reposicao")
 
   @@id([catequizandoId, reposicaoId])
-  @@index([reposicaoId], map: "fk_cr_reposicao")
+  @@index([reposicaoId], map: "idx_cr_reposicao")
   @@map("catequizando_reposicao")
 }
 
@@ -388,7 +388,7 @@ model TurmaCatequista {
   turma        Turma      @relation(fields: [turmaId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_tc_turma")
 
   @@id([turmaId, catequistaId])
-  @@index([catequistaId], map: "fk_tc_catequista")
+  @@index([catequistaId], map: "idx_tc_catequista")
   @@map("turma_catequista")
 }
 
@@ -396,14 +396,14 @@ model Mensagem {
   id             BigInt    @id @default(autoincrement())
   remetenteId    BigInt    @map("remetente_id")
   destinatarioId BigInt    @map("destinatario_id")
-  texto          String    @db.Text
+  texto          String   
   lida           Boolean?  @default(false)
-  dataEnvio      DateTime? @default(now()) @map("data_envio") @db.DateTime(0)
+  dataEnvio      DateTime? @default(now()) @map("data_envio")
   destinatario   Usuario   @relation("MensagemDestinatario", fields: [destinatarioId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_msg_destinatario")
   remetente      Usuario   @relation("MensagemRemetente", fields: [remetenteId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_msg_remetente")
 
-  @@index([remetenteId], map: "fk_msg_remetente")
-  @@index([destinatarioId], map: "fk_msg_destinatario")
+  @@index([remetenteId], map: "idx_msg_remetente")
+  @@index([destinatarioId], map: "idx_msg_destinatario")
   @@map("mensagem")
 }
 
@@ -411,3 +411,5 @@ enum TipoPasswordSetup {
   PRIMEIRO_ACESSO
   RESET_SENHA
 }
+
+
