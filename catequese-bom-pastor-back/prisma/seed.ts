@@ -1,335 +1,173 @@
-import { PrismaClient } from '@prisma/client';
-const bcrypt = require('bcrypt');
+import { Prisma, PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
+const perfis = ['ADMINISTRADOR', 'SECRETARIA', 'COORDENADOR', 'RESPONSAVEL', 'CATEQUISTA'] as const;
+type Perfil = (typeof perfis)[number];
+type PerfilOperador = 'ADMINISTRADOR' | 'SECRETARIA' | 'COORDENADOR';
+
+const operadores: { perfil: PerfilOperador; nome: string; email: string; senhaEnv: string }[] = [
+  { perfil: 'ADMINISTRADOR', nome: 'Administrador', email: 'admin@catequese.com', senhaEnv: 'SEED_ADMIN_SENHA' },
+  { perfil: 'SECRETARIA', nome: 'Secretaria', email: 'secretaria@catequese.com', senhaEnv: 'SEED_SECRETARIA_SENHA' },
+  { perfil: 'COORDENADOR', nome: 'Coordenador', email: 'coordenador@catequese.com', senhaEnv: 'SEED_COORDENADOR_SENHA' },
+];
+
+const etapas = ['Primeira Eucaristia I', 'Primeira Eucaristia II', 'Crisma I', 'Crisma II'];
+
+const cenarios = [
+  {
+    chave: 'PENDENTE', responsavelNome: 'Ana Souza', responsavelCpf: '11111111111',
+    responsavelEmail: 'ana.souza@email.com', responsavelTelefone: '11999999991',
+    catequizandoNome: 'Lucas Souza', etapa: 'Primeira Eucaristia I',
+    documentos: ['CERTIDAO_NASCIMENTO', 'COMPROVANTE_ENDERECO'],
+    decisoes: [],
+  },
+  {
+    chave: 'AGUARDANDO_COORDENADOR', responsavelNome: 'Carlos Oliveira', responsavelCpf: '22222222222',
+    responsavelEmail: 'carlos.oliveira@example.invalid', responsavelTelefone: '11999999992',
+    catequizandoNome: 'Mariana Oliveira', etapa: 'Primeira Eucaristia II',
+    documentos: ['CERTIDAO_NASCIMENTO', 'COMPROVANTE_ENDERECO', 'CERTIFICADO_BATISMO'],
+    decisoes: [{ perfil: 'SECRETARIA' as const, resultado: 'DOCUMENTACAO_OK', parecer: 'Documentação conferida e aprovada pela Secretaria.' }],
+  },
+  {
+    chave: 'APROVADA', responsavelNome: 'Fernanda Lima', responsavelCpf: '33333333333',
+    responsavelEmail: 'fernanda.lima@example.invalid', responsavelTelefone: '11999999993',
+    catequizandoNome: 'Pedro Lima', etapa: 'Crisma I',
+    documentos: ['CERTIDAO_NASCIMENTO', 'COMPROVANTE_ENDERECO', 'CERTIFICADO_BATISMO'],
+    decisoes: [
+      { perfil: 'SECRETARIA' as const, resultado: 'DOCUMENTACAO_OK', parecer: 'Documentação validada.' },
+      { perfil: 'COORDENADOR' as const, resultado: 'APROVADA', parecer: 'Aprovada conforme análise.' },
+    ],
+  },
+];
+
+export async function seed(prisma: PrismaClient, env: NodeJS.ProcessEnv = process.env) {
+  if (env.NODE_ENV !== 'development' || env.SEED_DESENVOLVIMENTO !== 'true') {
+    throw new Error('Seed permitido apenas com NODE_ENV=development e SEED_DESENVOLVIMENTO=true em banco de teste.');
+  }
+  const senhas = operadores.map(({ senhaEnv }) => {
+    const senha = env[senhaEnv];
+    if (!senha || Buffer.byteLength(senha, 'utf8') > 72) {
+      throw new Error(`Informe ${senhaEnv} com até 72 bytes.`);
+    }
+    return senha;
+  });
+  const hashes = await Promise.all(senhas.map((senha) => bcrypt.hash(senha, 12)));
+
+  const mensagens = await prisma.$transaction(async (tx) => {
+    const logs: string[] = [];
+    const perfilIds = new Map<Perfil, bigint>();
+    for (const nome of perfis) {
+      const perfil = await tx.perfil.upsert({
+        where: { nome }, create: { nome }, update: {}, select: { id: true },
+      });
+      perfilIds.set(nome, perfil.id);
+      logs.push(`Perfil ${nome} disponível.`);
+    }
+
+    const usuarioIds = new Map<PerfilOperador, bigint>();
+    for (const [index, operador] of operadores.entries()) {
+      const perfilId = perfilIds.get(operador.perfil);
+      if (perfilId === undefined) throw new Error(`Perfil ${operador.perfil} não encontrado.`);
+      const existente = await tx.usuario.findUnique({
+        where: { email: operador.email },
+        select: { id: true },
+      });
+      const usuario = await tx.usuario.upsert({
+        where: { email: operador.email },
+        update: {},
+        create: {
+          nome: operador.nome, email: operador.email, senha: hashes[index],
+          ativo: true, primeiroAcesso: false,
+          perfis: { create: { perfilId } },
+        },
+        select: { id: true, ativo: true, primeiroAcesso: true, senha: true, perfis: { select: { perfilId: true } } },
+      });
+      if (usuario.ativo !== true || usuario.primeiroAcesso ||
+        usuario.perfis.length !== 1 || usuario.perfis[0].perfilId !== perfilId ||
+        !(await bcrypt.compare(senhas[index], usuario.senha))) {
+        throw new Error(`Usuário ${operador.email} já existe com credenciais ou perfil diferentes; nenhum dado foi alterado.`);
+      }
+      usuarioIds.set(operador.perfil, usuario.id);
+      logs.push(`Usuário ${operador.perfil} ${existente ? 'preservado' : 'criado'}.`);
+    }
+
+    const etapaIds = new Map<string, bigint>();
+    for (const [index, nome] of etapas.entries()) {
+      const existentes = await tx.etapaCatequetica.findMany({ where: { nome }, select: { id: true } });
+      if (existentes.length > 1) throw new Error(`Há etapas duplicadas com o nome ${nome}.`);
+      const etapa = existentes.length === 0
+        ? await tx.etapaCatequetica.create({ data: { nome, ordem: index + 1, ativa: true }, select: { id: true } })
+        : await tx.etapaCatequetica.upsert({
+          where: { id: existentes[0].id },
+          create: { nome, ordem: index + 1, ativa: true },
+          update: { ordem: index + 1, ativa: true },
+          select: { id: true },
+        });
+      etapaIds.set(nome, etapa.id);
+    }
+    logs.push('Etapas catequéticas disponíveis.');
+
+    for (const cenario of cenarios) {
+      const marcador = `SEED_DESENVOLVIMENTO_V1:${cenario.chave}`;
+      const existentes = await tx.matricula.findMany({ where: { observacao: marcador }, select: { id: true } });
+      if (existentes.length > 1) throw new Error(`Há matrículas duplicadas para ${marcador}.`);
+      if (existentes.length === 1) {
+        logs.push(`Matrícula ${cenario.chave} já existe; alterações preservadas.`);
+        continue;
+      }
+      const etapaId = etapaIds.get(cenario.etapa);
+      if (etapaId === undefined) throw new Error(`Etapa ${cenario.etapa} não encontrada.`);
+      const decisoes = cenario.decisoes.map((decisao) => {
+        const usuarioId = usuarioIds.get(decisao.perfil);
+        if (usuarioId === undefined) throw new Error(`Usuário ${decisao.perfil} não encontrado.`);
+        return { usuarioId, etapa: decisao.perfil, resultado: decisao.resultado, parecer: decisao.parecer };
+      });
+      await tx.matricula.create({
+        data: {
+          status: cenario.chave,
+          dataAprovacao: cenario.chave === 'APROVADA' ? new Date() : null,
+          observacao: marcador,
+          responsavelNome: cenario.responsavelNome,
+          responsavelCpf: cenario.responsavelCpf,
+          responsavelEmail: cenario.responsavelEmail,
+          responsavelTelefone: cenario.responsavelTelefone,
+          responsavelWhatsapp: cenario.responsavelTelefone,
+          responsavelParentesco: 'Responsável',
+          responsavelDataNascimento: new Date('1985-01-01T00:00:00.000Z'),
+          catequizandoNome: cenario.catequizandoNome,
+          catequizandoDataNascimento: new Date('2015-01-01T00:00:00.000Z'),
+          catequizandoEndereco: 'Endereço de teste',
+          catequizandoTelefoneEmergencia: cenario.responsavelTelefone,
+          etapaId,
+          documentos: {
+            create: cenario.documentos.map((tipoDocumento) => ({
+              tipoDocumento, nomeArquivo: `${tipoDocumento.toLowerCase()}.pdf`, status: 'PENDENTE',
+            })),
+          },
+          decisoes: { create: decisoes },
+        },
+      });
+      logs.push(`Matrícula ${cenario.chave} criada.`);
+    }
+    return logs;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
+
+  for (const mensagem of mensagens) console.log(mensagem);
+}
 
 async function main() {
-  console.log('🌱 Seeding database...');
-
-  // Criar administrador
-  const adminPassword = await bcrypt.hash('admin123', 10);
-  const admin = await prisma.administrador.upsert({
-    where: { email: 'admin@catequese.com' },
-    update: {
-      senha: adminPassword,
-      nome: 'Administrador',
-      primeiroAcesso: true,
-    },
-    create: {
-      email: 'admin@catequese.com',
-      nome: 'Administrador',
-      senha: adminPassword,
-      primeiroAcesso: true,
-    },
-  });
-  console.log('✅ Admin criado:', admin.email);
-
-  // Criar responsável/pai
-  const parentPassword = await bcrypt.hash('parent123', 10);
-  const responsavel = await prisma.responsavel.upsert({
-    where: { email: 'pai@catequese.com' },
-    update: {
-      nome: 'João Silva',
-      telefone: '11988888888',
-      senha: parentPassword,
-      primeiroAcesso: true,
-    },
-    create: {
-      email: 'pai@catequese.com',
-      nome: 'João Silva',
-      telefone: '11988888888',
-      senha: parentPassword,
-      primeiroAcesso: true,
-    },
-  });
-  console.log('✅ Responsável criado:', responsavel.email);
-
-  // Criar catequistas
-  const catequistaPassword1 = await bcrypt.hash('ana123', 10);
-  const catequista1 = await prisma.catequista.upsert({
-    where: { email: 'ana.catequista@catequese.com' },
-    update: {
-      senha: catequistaPassword1,
-      nome: 'Ana Silva',
-      primeiroAcesso: true,
-    },
-    create: {
-      nome: 'Ana Silva',
-      email: 'ana.catequista@catequese.com',
-      senha: catequistaPassword1,
-      telefone: '11977777777',
-      endereco: 'Rua das Acácias, 100 - São Paulo, SP',
-      bio: 'Catequista experiente com 10 anos de dedicação ao ensino da fé',
-      primeiroAcesso: true,
-    },
-  });
-  console.log('✅ Catequista criada:', catequista1.email);
-
-  const catequistaPassword2 = await bcrypt.hash('carlos123', 10);
-  const catequista2 = await prisma.catequista.upsert({
-    where: { email: 'carlos.catequista@catequese.com' },
-    update: {
-      senha: catequistaPassword2,
-      nome: 'Carlos Mendes',
-      primeiroAcesso: true,
-    },
-    create: {
-      nome: 'Carlos Mendes',
-      email: 'carlos.catequista@catequese.com',
-      senha: catequistaPassword2,
-      telefone: '11966666666',
-      endereco: 'Avenida Brasil, 200 - São Paulo, SP',
-      bio: 'Especialista em catequese infantil',
-      primeiroAcesso: true,
-    },
-  });
-  console.log('✅ Catequista criada:', catequista2.email);
-
-  console.log('\n🎉 Seed concluído!');
-  console.log('\n📝 Credenciais de acesso:');
-  console.log('   Admin: admin@catequese.com / admin123');
-  console.log('   Responsável: pai@catequese.com / parent123');
-  console.log('   Catequista Ana: ana.catequista@catequese.com / ana123');
-  console.log('   Catequista Carlos: carlos.catequista@catequese.com / carlos123');
+  const prisma = new PrismaClient();
+  try {
+    await seed(prisma);
+    console.log('Seed de desenvolvimento concluído.');
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-main()
-  .catch((e) => {
-    console.error('❌ Erro ao fazer seed:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
+if (require.main === module) {
+  main().catch((error: unknown) => {
+    console.error('Erro ao executar o seed:', error);
+    process.exitCode = 1;
   });
-      },
-    },
-    update: {},
-    create: {
-      catequizandoId: catequizando1.id,
-      tipo: 'CARTEIRA_VACINA',
-      status: true,
-      uploadDate: new Date('2024-10-20'),
-    },
-  });
-
-  await prisma.catequizandoDocumento.upsert({
-    where: {
-      catequizandoId_tipo: {
-        catequizandoId: catequizando2.id,
-        tipo: 'CERTIDAO_NASCIMENTO',
-      },
-    },
-    update: {},
-    create: {
-      catequizandoId: catequizando2.id,
-      tipo: 'CERTIDAO_NASCIMENTO',
-      status: true,
-      uploadDate: new Date('2024-10-15'),
-    },
-  });
-
-  await prisma.catequizandoDocumento.upsert({
-    where: {
-      catequizandoId_tipo: {
-        catequizandoId: catequizando2.id,
-        tipo: 'CPF',
-      },
-    },
-    update: {},
-    create: {
-      catequizandoId: catequizando2.id,
-      tipo: 'CPF',
-      status: false,
-      uploadDate: null,
-    },
-  });
-
-  await prisma.catequizandoDocumento.upsert({
-    where: {
-      catequizandoId_tipo: {
-        catequizandoId: catequizando2.id,
-        tipo: 'CARTEIRA_VACINA',
-      },
-    },
-    update: {},
-    create: {
-      catequizandoId: catequizando2.id,
-      tipo: 'CARTEIRA_VACINA',
-      status: true,
-      uploadDate: new Date('2024-10-20'),
-    },
-  });
-
-  // Criar eventos variados
-  const eventos = [
-    {
-      titulo: 'Missa de Primeira Comunhão',
-      descricao: 'Cerimônia de primeira comunhão das turmas 2024',
-      data: new Date('2025-06-15T10:00:00Z'),
-      horaInicio: '10:00',
-      horaFim: '12:00',
-      local: 'Matriz da Paróquia',
-      categoria: 'CELEBRACAO',
-      cor: '#EAB308',
-      tipo: 'GERAL',
-    },
-    {
-      titulo: 'Encontro de Catequese - Nível I',
-      descricao: 'Tema: Conhecendo Jesus - Parábola do Bom Pastor',
-      data: new Date('2025-03-08T09:00:00Z'),
-      horaInicio: '09:00',
-      horaFim: '11:00',
-      local: 'Salão Paroquial - Sala 1',
-      categoria: 'ENCONTRO',
-      cor: '#3B82F6',
-      recorrencia: 'SEMANAL',
-      tipo: 'TURMA',
-      turmaId: turma2024.id,
-    },
-    {
-      titulo: 'Encontro de Catequese - Nível II',
-      descricao: 'Tema: Os Sacramentos - Eucaristia',
-      data: new Date('2025-03-08T14:00:00Z'),
-      horaInicio: '14:00',
-      horaFim: '16:00',
-      local: 'Salão Paroquial - Sala 2',
-      categoria: 'ENCONTRO',
-      cor: '#3B82F6',
-      recorrencia: 'SEMANAL',
-      tipo: 'TURMA',
-      turmaId: turma2025.id,
-    },
-    {
-      titulo: 'Reunião de Pais e Mestres',
-      descricao: 'Reunião bimestral com os responsáveis para alinhamento do cronograma',
-      data: new Date('2025-03-15T19:00:00Z'),
-      horaInicio: '19:00',
-      horaFim: '21:00',
-      local: 'Salão Paroquial',
-      categoria: 'REUNIAO',
-      cor: '#F97316',
-      tipo: 'GERAL',
-    },
-    {
-      titulo: 'Retiro Espiritual de Páscoa',
-      descricao: 'Retiro de preparação para a Páscoa com todas as turmas',
-      data: new Date('2025-04-12T08:00:00Z'),
-      dataFim: new Date('2025-04-12T17:00:00Z'),
-      horaInicio: '08:00',
-      horaFim: '17:00',
-      local: 'Centro de Retiros São José',
-      categoria: 'RETIRO',
-      cor: '#22C55E',
-      tipo: 'GERAL',
-    },
-    {
-      titulo: 'Feriado: Semana Santa',
-      descricao: 'Semana Santa - Não haverá encontros de catequese',
-      data: new Date('2025-04-14T00:00:00Z'),
-      dataFim: new Date('2025-04-20T23:59:00Z'),
-      categoria: 'FERIADO',
-      cor: '#EF4444',
-      tipo: 'GERAL',
-    },
-  ];
-
-  for (const eventoData of eventos) {
-    const evento = await prisma.evento.create({ data: eventoData });
-    console.log(`✅ Evento criado: ${evento.titulo}`);
-  }
-  // Criar música
-  const musica = await prisma.musica.create({
-    data: {
-      titulo: 'Eu Vim Para Adorar-te',
-      autor: 'Comunidade Católica Shalom',
-      linkExterno: 'https://youtube.com/watch?v=exemplo',
-      notas: 'Tom: G',
-    },
-  });
-  console.log('✅ Música criada:', musica.titulo);
-
-  // Criar itens da lojinha
-  console.log('🛍️ Criando itens da lojinha...');
-  const items = [
-    {
-      id: 'seed-item-1',
-      nome: 'Camiseta da Catequese',
-      descricao: 'Camiseta oficial com logo Bom Pastor',
-      preco: 45.0,
-      estoque: 50,
-      imagemUrl: '🎽',
-    },
-    {
-      id: 'seed-item-2',
-      nome: 'Caneca Personalizada',
-      descricao: 'Caneca com versículos bíblicos',
-      preco: 30.0,
-      estoque: 30,
-      imagemUrl: '☕',
-    },
-    {
-      id: 'seed-item-3',
-      nome: 'Terço Infantil',
-      descricao: 'Terço colorido para crianças',
-      preco: 15.0,
-      estoque: 100,
-      imagemUrl: '📿',
-    },
-    {
-      id: 'seed-item-4',
-      nome: 'Chaveiro Bom Pastor',
-      descricao: 'Chaveiro com imagem do Bom Pastor',
-      preco: 10.0,
-      estoque: 200,
-      imagemUrl: '🔑',
-    },
-    {
-      id: 'seed-item-5',
-      nome: 'Apostila de Catequese',
-      descricao: 'Material didático completo',
-      preco: 25.0,
-      estoque: 150,
-      imagemUrl: '📖',
-    },
-    {
-      id: 'seed-item-6',
-      nome: 'Kit de Adesivos',
-      descricao: 'Adesivos religiosos infantis',
-      preco: 12.0,
-      estoque: 80,
-      imagemUrl: '✨',
-    },
-  ];
-
-  for (const item of items) {
-    await prisma.lojaItem.upsert({
-      where: { id: item.id },
-      update: {
-        nome: item.nome,
-        descricao: item.descricao,
-        preco: item.preco,
-        estoque: item.estoque,
-        imagemUrl: item.imagemUrl,
-      },
-      create: item,
-    });
-  }
-  console.log('✅ Itens da lojinha criados');
-
->>>>>>> origin/correcoes-afonso:back/prisma/seed.ts
-  console.log('\n🎉 Seed concluído!');
-  console.log('\n📝 Credenciais de acesso:');
-  console.log('   Admin: admin@catequese.com / admin123');
-  console.log('   Responsável: pai@catequese.com / parent123');
-  console.log('   Catequista Ana: ana.catequista@catequese.com / ana123');
-  console.log('   Catequista Carlos: carlos.catequista@catequese.com / carlos123');
 }
-
-main()
-  .catch((e) => {
-    console.error('❌ Erro ao fazer seed:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
