@@ -1,6 +1,11 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
-export type UserRole = "responsavel" | "catequista" | "admin";
+export type UserRole =
+  | "responsavel"
+  | "catequista"
+  | "admin"
+  | "secretaria"
+  | "coordenador";
 
 interface User {
   id: string;
@@ -28,15 +33,41 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function normalizeRole(role: string | null | undefined): UserRole | null {
   const normalized = String(role || "").toLowerCase().trim();
 
-  if (normalized === "admin" || normalized === "administrador" || normalized === "adminstrador") {
+  if (
+    normalized === "admin" ||
+    normalized === "administrador" ||
+    normalized === "adminstrador"
+  ) {
     return "admin";
   }
 
-  if (normalized === "catequista" || normalized === "catechist") {
+  if (
+    normalized === "secretaria" ||
+    normalized === "secretary"
+  ) {
+    return "secretaria";
+  }
+
+  if (
+    normalized === "coordenador" ||
+    normalized === "coordinator"
+  ) {
+    return "coordenador";
+  }
+
+  if (
+    normalized === "catequista" ||
+    normalized === "catechist"
+  ) {
     return "catequista";
   }
 
-  if (normalized === "responsavel" || normalized === "responsável" || normalized === "parent" || normalized === "pai/mãe") {
+  if (
+    normalized === "responsavel" ||
+    normalized === "responsável" ||
+    normalized === "parent" ||
+    normalized === "pai/mãe"
+  ) {
     return "responsavel";
   }
 

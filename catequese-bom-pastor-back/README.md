@@ -53,9 +53,31 @@ npx prisma migrate dev
 
 ### 5. (Opcional) Seed de dados iniciais
 
-```bash
-npm run prisma:seed
+Este seed é **exclusivo para um banco de desenvolvimento isolado**. Confirme a
+`DATABASE_URL` antes de executá-lo; as variáveis abaixo não verificam o destino do banco.
+Ele cria os cinco perfis, quatro etapas e três matrículas fictícias com metadados de
+documentos e decisões. Os arquivos de documentos não são enviados.
+
+As contas de teste são `admin@catequese.com`, `secretaria@catequese.com` e
+`coordenador@catequese.com`. Defina suas senhas no ambiente, sem salvá-las no
+repositório. Para execução no PowerShell:
+
+```powershell
+$env:NODE_ENV = 'development'
+$env:SEED_DESENVOLVIMENTO = 'true'
+$env:SEED_ADMIN_SENHA = Read-Host 'Senha do administrador de teste'
+$env:SEED_SECRETARIA_SENHA = Read-Host 'Senha da secretaria de teste'
+$env:SEED_COORDENADOR_SENHA = Read-Host 'Senha do coordenador de teste'
+npx prisma db seed
 ```
+
+As senhas devem ser não vazias e ter no máximo 72 bytes UTF-8. Se uma conta já
+existir, o seed não altera a senha ou os perfis e falha caso ela não corresponda ao
+perfil e à senha informados. Etapas existentes com os nomes previstos são ativadas e
+têm a ordem atualizada. As matrículas são identificadas por um marcador em
+`observacao` e preservadas nas próximas execuções, inclusive após decisões; não apague
+o marcador. Execute sem concorrência: o schema não possui unicidade para nomes de
+etapas nem para esse marcador. A transação reverte as alterações se houver erro.
 
 ### 6. Iniciar o servidor
 
