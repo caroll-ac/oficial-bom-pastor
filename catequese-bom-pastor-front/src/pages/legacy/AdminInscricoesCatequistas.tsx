@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { ADMIN_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { fetchWithAuth } from "@/lib/api";
 import { API_ROUTES } from "@/lib/routes";
@@ -1020,14 +1021,7 @@ export default function AdminInscricoesCatequistas() {
             </Button>
           </div>
 
-          <div className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary">
-                <ShieldCheck className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <p className="font-medium">Área do Admin</p>
-            </div>
-          </div>
+          <SidebarUser />
 
           <SidebarNav items={ADMIN_NAV_ITEMS} pathname={location.pathname} />
 

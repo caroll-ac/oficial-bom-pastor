@@ -58,7 +58,7 @@ export class MatriculaController {
   @ApiResponse({ status: 201, type: ParecerSecretariaResponseDto })
   @ApiResponse({ status: 400, description: 'ID ou corpo inválido' })
   @ApiResponse({ status: 404, description: 'Matrícula não encontrada' })
-  @ApiResponse({ status: 409, description: 'Matrícula não está PENDENTE' })
+  @ApiResponse({ status: 409, description: 'Matrícula não está PENDENTE ou AGUARDANDO_COORDENADOR' })
   registrarParecerSecretaria(
     @Param('id') id: string,
     @GetUser('id') usuarioId: string,
@@ -74,7 +74,7 @@ export class MatriculaController {
   @ApiResponse({ status: 201, type: DecisaoCoordenadorResponseDto })
   @ApiResponse({ status: 400, description: 'ID ou corpo inválido' })
   @ApiResponse({ status: 404, description: 'Matrícula não encontrada' })
-  @ApiResponse({ status: 409, description: 'Matrícula não está AGUARDANDO_COORDENADOR' })
+  @ApiResponse({ status: 409, description: 'Matrícula não está PENDENTE ou AGUARDANDO_COORDENADOR' })
   registrarDecisaoCoordenador(
     @Param('id') id: string,
     @GetUser('id') usuarioId: string,

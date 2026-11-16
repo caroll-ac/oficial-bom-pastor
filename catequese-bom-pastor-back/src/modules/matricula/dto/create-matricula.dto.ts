@@ -98,9 +98,9 @@ export class CreateMatriculaDto {
   @MaxLength(16000)
   observacao?: string | null;
 
-  @ApiProperty({ type: [CreateDocumentoDto], minItems: 3, maxItems: 3 })
+  @ApiProperty({ type: [CreateDocumentoDto], minItems: 2, maxItems: 3 })
   @IsArray()
-  @ArrayMinSize(3)
+  @ArrayMinSize(2)
   @ArrayMaxSize(3)
   @ArrayUnique((documento: CreateDocumentoDto) => documento?.tipoDocumento)
   @ValidateNested({ each: true })

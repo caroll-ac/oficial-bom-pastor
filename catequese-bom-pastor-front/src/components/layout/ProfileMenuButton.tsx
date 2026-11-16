@@ -6,8 +6,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,7 +18,7 @@ function getInitials(name: string) {
 }
 
 export function ProfileMenuButton() {
-  const { isAuthenticated, user, role, logout } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const location = useLocation();
   const [profile, setProfile] = useState<{ nome: string; fotoUrl: string | null } | null>(null);
 
@@ -50,11 +48,10 @@ export function ProfileMenuButton() {
     };
   }, [isAuthenticated, location.pathname, user?.id, user?.nome]);
 
-  const isPrivateRoute = /^\/(perfil|pais|admin|catequista|comunicacao)(\/|$)/.test(location.pathname);
+  const isPrivateRoute = /^\/(perfil|pais|admin|catequista|secretaria|coordenador|comunicacao)(\/|$)/.test(location.pathname);
   if (!isAuthenticated || !isPrivateRoute) return null;
 
   const displayName = profile?.nome || user?.nome || "Meu perfil";
-  const roleName = role === "admin" ? "Administrador" : role === "catequista" ? "Catequista" : "Responsável";
 
   return (
     <div className="fixed right-4 top-3 z-[60]">
@@ -77,11 +74,6 @@ export function ProfileMenuButton() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={8} className="w-56">
-          <DropdownMenuLabel className="font-normal">
-            <span className="block truncate font-medium">{displayName}</span>
-            <span className="block text-xs text-muted-foreground">{roleName}</span>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
             <Link to="/perfil" className="flex cursor-pointer items-center">
               <UserRound className="mr-2 h-4 w-4" /> Meu perfil

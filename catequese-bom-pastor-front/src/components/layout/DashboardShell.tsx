@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SidebarNav, type SidebarNavItem } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { Cross, LogOut, Menu } from "lucide-react";
@@ -15,9 +16,8 @@ type DashboardShellProps = {
 
 export function DashboardShell({ items, title, description, children }: DashboardShellProps) {
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const { sidebarOpen, toggleSidebar, setSidebarOpen } = usePersistentSidebar();
-  const roleName = user?.role === "admin" ? "Área do Admin" : user?.role === "responsavel" ? "Área do Responsável" : "Área do Catequista";
 
   return (
     <div className={`flex min-h-screen bg-background transition-[padding] duration-300 ${sidebarOpen ? "lg:pl-64" : "lg:pl-0"}`}>
@@ -34,7 +34,7 @@ export function DashboardShell({ items, title, description, children }: Dashboar
               <Menu className="h-5 w-5" />
             </Button>
           </div>
-          <div className="border-b p-4"><p className="font-medium">{roleName}</p></div>
+          <SidebarUser />
           <SidebarNav items={items} pathname={location.pathname} />
           <div className="border-t p-4">
             <Button variant="nav" className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={logout}>
@@ -48,7 +48,7 @@ export function DashboardShell({ items, title, description, children }: Dashboar
 
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 border-b bg-card">
-          <div className="flex min-h-16 items-center gap-4 px-4 py-2">
+          <div className="flex min-h-16 items-center gap-4 px-4 py-2 pr-16">
             <Button variant="ghost" size="icon" className={sidebarOpen ? "lg:hidden" : ""} onClick={toggleSidebar} aria-label="Abrir menu">
               <Menu className="h-5 w-5" />
             </Button>

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { ADMIN_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import {
   Dialog,
@@ -437,17 +438,7 @@ export default function AddCatequizando() {
             </Button>
           </div>
 
-          {/* User Info */}
-          <div className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gold-light">
-                <Users className="h-5 w-5 text-gold-dark" />
-              </div>
-              <div>
-                <p className="font-medium">Área do Admin</p>
-              </div>
-            </div>
-          </div>
+          <SidebarUser />
 
           {/* Navigation */}
           <nav className="flex-1 space-y-1 p-4">

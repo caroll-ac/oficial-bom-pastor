@@ -124,8 +124,8 @@ export default function AdminOverview() {
   return (
     <DashboardShell
       items={ADMIN_NAV_ITEMS}
-      title="Visão geral"
-      description="Indicadores e pendências da catequese"
+      title="Área Administrativa"
+      description="Gerencie usuários, turmas, conteúdos e configurações do sistema."
     >
       <div className="flex justify-end">
         <Button variant="outline" size="sm" className="gap-2" onClick={() => void loadDashboard(true)} disabled={loading || refreshing}>

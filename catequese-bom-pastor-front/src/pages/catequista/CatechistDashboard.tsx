@@ -49,7 +49,6 @@ import {
   Droplet,
   FileUp,
   Gift,
-  GraduationCap,
   LogOut,
   MessageCircle,
   Menu,
@@ -62,6 +61,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { getDashboardNavItems } from "@/lib/sidebarNavItems";
 import { Link, useLocation } from "react-router-dom";
 import { fetchWithAuth } from "@/lib/api";
@@ -523,17 +523,7 @@ export default function CatechistDashboard() {
             </Button>
           </div>
 
-          {/* User Info */}
-          <div className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gold-light">
-                <GraduationCap className="h-5 w-5 text-gold-dark" />
-              </div>
-              <div>
-                <p className="font-medium">{isAdminRoute ? 'Área do Admin' : 'Área do Catequista'}</p>
-              </div>
-            </div>
-          </div>
+          <SidebarUser />
 
           <SidebarNav items={getDashboardNavItems(isAdminRoute)} pathname={location.pathname} />
 

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { Link, useLocation } from "react-router-dom";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
+import { useAuth } from "@/contexts/AuthContext";
 import { PARENT_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -137,6 +139,7 @@ const quickActions = [
 ];
 
 export default function ParentDashboard() {
+  const { user } = useAuth();
   const { sidebarOpen, toggleSidebar, setSidebarOpen } = usePersistentSidebar();
   const location = useLocation();
   const [selectedChild, setSelectedChild] = useState<(typeof children)[number] | null>(null);
@@ -255,18 +258,7 @@ export default function ParentDashboard() {
             </Button>
           </div>
 
-          {/* User Info */}
-          <div className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sage-light">
-                <User className="h-5 w-5 text-sage-dark" />
-              </div>
-              <div>
-                <p className="font-medium">Carlos Silva</p>
-                <p className="text-sm text-muted-foreground">Responsável</p>
-              </div>
-            </div>
-          </div>
+          <SidebarUser />
 
           <SidebarNav items={PARENT_NAV_ITEMS} pathname={location.pathname} />
 
@@ -310,7 +302,7 @@ export default function ParentDashboard() {
           <div className="mb-6 overflow-hidden rounded-2xl border bg-gradient-to-r from-primary/10 via-sage-light/40 to-background p-6 shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <h1 className="font-display text-3xl font-bold text-foreground">Olá, Carlos!</h1>
+                <h1 className="font-display text-3xl font-bold text-foreground">{user?.nome ? `Olá, ${user.nome}!` : "Olá!"}</h1>
                 <p className="text-muted-foreground">Acompanhe o progresso dos seus filhos na catequese</p>
               </div>
               

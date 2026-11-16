@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { PARENT_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import {
   Card,
@@ -27,7 +28,6 @@ import {
   Plus,
   Share2,
   Upload,
-  User,
   Users,
   X,
 } from "lucide-react";
@@ -259,18 +259,7 @@ export default function ParentGaleria() {
             </Button>
           </div>
 
-          {/* User Info */}
-          <div className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sage-light">
-                <User className="h-5 w-5 text-sage-dark" />
-              </div>
-              <div>
-                <p className="font-medium">Carlos Silva</p>
-                <p className="text-sm text-muted-foreground">Responsável</p>
-              </div>
-            </div>
-          </div>
+          <SidebarUser />
 
           <SidebarNav items={PARENT_NAV_ITEMS} pathname={location.pathname} />
 

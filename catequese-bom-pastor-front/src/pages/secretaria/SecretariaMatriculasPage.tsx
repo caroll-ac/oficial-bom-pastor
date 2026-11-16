@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText } from "lucide-react";
-import { MainLayout } from "@/components/layout/MainLayout";
+import { DashboardShell } from "@/components/layout/DashboardShell";
+import { HistoricoAnalisesSecretaria, type AnaliseSecretaria } from "@/components/matriculas/HistoricoAnalisesSecretaria";
+import { MatriculaStatusBadge } from "@/components/matriculas/MatriculaStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +14,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { statusMatriculaConfig } from "@/lib/matriculaStatus";
 import { API_ROUTES } from "@/lib/routes";
+import { SECRETARIA_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { cn } from "@/lib/utils";
 
 // Espelha MatriculaResponseDto do backend (GET /api/matriculas).
@@ -50,6 +54,7 @@ interface DocumentoResponse {
 
 interface MatriculaDetalheResponse extends MatriculaResponse {
   documentos: DocumentoResponse[];
+  analisesSecretaria: AnaliseSecretaria[];
 }
 
 const tiposDocumento: Record<string, string> = {
@@ -62,15 +67,6 @@ const statusDocumentoConfig: Record<string, { label: string; className: string }
   PENDENTE: { label: "Pendente", className: "border-transparent bg-gray-100 text-gray-800" },
   APROVADO: { label: "Aprovado", className: "border-transparent bg-green-100 text-green-800" },
   REJEITADO: { label: "Rejeitado", className: "border-transparent bg-red-100 text-red-800" },
-};
-
-const statusConfig: Record<string, { label: string; className: string }> = {
-  PENDENTE: { label: "Pendente", className: "border-transparent bg-gray-100 text-gray-800" },
-  EM_ANALISE: { label: "Em análise", className: "border-transparent bg-blue-100 text-blue-800" },
-  AGUARDANDO_COORDENADOR: { label: "Aguardando coordenador", className: "border-transparent bg-indigo-100 text-indigo-800" },
-  PENDENCIA_DOCUMENTAL: { label: "Pendência documental", className: "border-transparent bg-amber-100 text-amber-800" },
-  APROVADA: { label: "Aprovada", className: "border-transparent bg-green-100 text-green-800" },
-  REJEITADA: { label: "Rejeitada", className: "border-transparent bg-red-100 text-red-800" },
 };
 
 const TODOS = "TODOS";
@@ -87,14 +83,6 @@ const formatarData = (iso: string | null) => {
   const data = new Date(iso);
   if (Number.isNaN(data.getTime())) return "—";
   return data.toLocaleDateString("pt-BR", { timeZone: "UTC" });
-};
-
-const StatusBadge = ({ status }: { status: string }) => {
-  const config = statusConfig[status] ?? {
-    label: status,
-    className: "border-transparent bg-gray-100 text-gray-800",
-  };
-  return <Badge className={cn("whitespace-nowrap", config.className)}>{config.label}</Badge>;
 };
 
 const Dado = ({ label, valor }: { label: string; valor: string }) => (
@@ -118,13 +106,14 @@ export default function SecretariaMatriculasPage() {
   const [resultado, setResultado] = useState("");
   const [parecer, setParecer] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const enviandoRef = useRef(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
   const { toast } = useToast();
-  const carregarDetalhe = useCallback(async (protocolo: string) => {
+  const carregarDetalhe = useCallback(async (protocolo: string, aposRegistro = false) => {
     protocoloAtual.current = protocolo;
     setCarregandoDetalhe(true);
     setErroDetalhe(null);
-    setDetalhe(null);
+    if (!aposRegistro) setDetalhe(null);
     try {
       const response = await api.get(`${API_ROUTES.matriculas}/${encodeURIComponent(protocolo)}`);
       if (!response.ok) {
@@ -140,7 +129,8 @@ export default function SecretariaMatriculasPage() {
       if (protocoloAtual.current === protocolo) setDetalhe(dados);
     } catch (e) {
       if (protocoloAtual.current === protocolo) {
-        setErroDetalhe(e instanceof Error ? e.message : "Não foi possível carregar os detalhes da matrícula.");
+        const mensagem = e instanceof Error ? e.message : "Não foi possível carregar os detalhes da matrícula.";
+        setErroDetalhe(aposRegistro ? `O parecer foi registrado, mas o histórico não pôde ser atualizado. ${mensagem}` : mensagem);
       }
     } finally {
       if (protocoloAtual.current === protocolo) setCarregandoDetalhe(false);
@@ -156,6 +146,7 @@ export default function SecretariaMatriculasPage() {
   };
 
   const fechar = () => {
+    if (enviandoRef.current) return;
     protocoloAtual.current = null;
     setSelecionada(null);
     setDetalhe(null);
@@ -165,7 +156,7 @@ export default function SecretariaMatriculasPage() {
   };
 
   const registrarParecer = async () => {
-    if (!selecionada) return;
+    if (!selecionada || !detalhe || !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) || enviandoRef.current || erroDetalhe) return;
     const protocolo = selecionada.protocolo;
     const texto = parecer.trim();
 
@@ -179,6 +170,7 @@ export default function SecretariaMatriculasPage() {
     }
 
     setErroForm(null);
+    enviandoRef.current = true;
     setEnviando(true);
     try {
       const response = await api.post(
@@ -191,23 +183,20 @@ export default function SecretariaMatriculasPage() {
           401: "Sessão expirada. Faça login novamente.",
           403: "Você não tem permissão para registrar o parecer.",
           404: "Matrícula não encontrada.",
-          409: "Esta matrícula não está mais pendente de análise. Atualize a lista.",
+          409: "Esta matrícula não permite mais análises. Atualize a lista.",
         };
         throw new Error(mensagens[response.status] ?? "Não foi possível registrar o parecer. Tente novamente.");
       }
 
-      const dados: { status: string } = await response.json();
-      setMatriculas((atuais) => atuais.map((m) => (m.protocolo === protocolo ? { ...m, status: dados.status } : m)));
       if (protocoloAtual.current === protocolo) {
-        setSelecionada((atual) => (atual ? { ...atual, status: dados.status } : atual));
-        setDetalhe((atual) => (atual ? { ...atual, status: dados.status } : atual));
         setResultado("");
         setParecer("");
       }
       toast({
         title: "Parecer registrado",
-        description: `Matrícula ${protocolo}: ${statusConfig[dados.status]?.label ?? dados.status}.`,
+        description: `Análise da matrícula ${protocolo} registrada. A decisão final é responsabilidade do Coordenador.`,
       });
+      if (protocoloAtual.current === protocolo) await carregarDetalhe(protocolo, true);
     } catch (e) {
       toast({
         variant: "destructive",
@@ -215,6 +204,7 @@ export default function SecretariaMatriculasPage() {
         description: e instanceof Error ? e.message : "Não foi possível registrar o parecer. Tente novamente.",
       });
     } finally {
+      enviandoRef.current = false;
       setEnviando(false);
     }
   };
@@ -254,20 +244,37 @@ export default function SecretariaMatriculasPage() {
     });
   }, [matriculas, busca, filtroStatus]);
 
-  return (
-    <MainLayout>
-      <section className="bg-gradient-to-br from-background via-muted/30 to-sage-light/20 px-4 py-8 md:py-12">
-        <div className="mx-auto max-w-6xl space-y-6">
-          <div>
-            <h1 className="font-display text-2xl font-bold md:text-3xl">Matrículas recebidas</h1>
-            <p className="text-muted-foreground">Área da Secretaria — acompanhamento das matrículas.</p>
-          </div>
+  const indicadores = [
+    { titulo: "Pendentes", valor: matriculas.filter((m) => m.status === "PENDENTE").length },
+    { titulo: "Pendência documental", valor: matriculas.filter((m) => m.status === "PENDENCIA_DOCUMENTAL").length },
+    { titulo: "Aguardando coordenador", valor: matriculas.filter((m) => m.status === "AGUARDANDO_COORDENADOR").length },
+    { titulo: "Total", valor: matriculas.length },
+  ];
 
-          <Card variant="elevated">
+  return (
+    <DashboardShell
+      items={SECRETARIA_NAV_ITEMS}
+      title="Área da Secretaria"
+      description="Acompanhe matrículas e registre análises documentais. A decisão final é responsabilidade do Coordenador."
+    >
+          {!carregando && !erro && (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {indicadores.map((indicador) => (
+                <Card key={indicador.titulo} variant="elevated">
+                  <CardHeader className="pb-2">
+                    <CardDescription>{indicador.titulo}</CardDescription>
+                    <CardTitle className="font-display text-3xl">{indicador.valor}</CardTitle>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <Card variant="elevated" className="min-w-0">
             <CardHeader>
               <CardTitle>Lista de matrículas</CardTitle>
               <CardDescription>
-                {carregando ? "Carregando..." : `${filtradas.length} de ${matriculas.length} matrículas`}
+                {carregando ? "Carregando..." : erro ? "Não foi possível carregar a lista." : `${filtradas.length} de ${matriculas.length} matrículas encontradas`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -284,7 +291,7 @@ export default function SecretariaMatriculasPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={TODOS}>Todos os status</SelectItem>
-                    {Object.entries(statusConfig).map(([valor, { label }]) => (
+                    {Object.entries(statusMatriculaConfig).map(([valor, { label }]) => (
                       <SelectItem key={valor} value={valor}>{label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -298,7 +305,7 @@ export default function SecretariaMatriculasPage() {
                 </div>
               )}
 
-              <Table>
+              <Table className="min-w-[760px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Protocolo</TableHead>
@@ -325,7 +332,7 @@ export default function SecretariaMatriculasPage() {
                       <TableCell className="whitespace-nowrap">{m.catequizando.nome}</TableCell>
                       <TableCell className="whitespace-nowrap">{m.etapa.nome}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatarData(m.dataSolicitacao)}</TableCell>
-                      <TableCell><StatusBadge status={m.status} /></TableCell>
+                      <TableCell><MatriculaStatusBadge status={m.status} /></TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="outline" onClick={() => abrir(m)}>Visualizar</Button>
                       </TableCell>
@@ -335,9 +342,6 @@ export default function SecretariaMatriculasPage() {
               </Table>
             </CardContent>
           </Card>
-        </div>
-      </section>
-
       <Dialog open={!!selecionada} onOpenChange={(aberto) => !aberto && fechar()}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           {selecionada && (
@@ -346,7 +350,7 @@ export default function SecretariaMatriculasPage() {
                 <DialogTitle>Matrícula {selecionada.protocolo}</DialogTitle>
                 <DialogDescription asChild>
                   <div className="flex items-center gap-2">
-                    <StatusBadge status={(detalhe ?? selecionada).status} />
+                    <MatriculaStatusBadge status={(detalhe ?? selecionada).status} />
                     <span>{(detalhe ?? selecionada).etapa.nome} • {formatarData((detalhe ?? selecionada).dataSolicitacao)}</span>
                   </div>
                 </DialogDescription>
@@ -361,7 +365,7 @@ export default function SecretariaMatriculasPage() {
               {erroDetalhe && (
                 <div role="alert" className="flex flex-col gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between">
                   <span>{erroDetalhe}</span>
-                  <Button size="sm" variant="outline" onClick={() => carregarDetalhe(selecionada.protocolo)}>
+                  <Button size="sm" variant="outline" onClick={() => carregarDetalhe(selecionada.protocolo, !!detalhe)}>
                     Tentar novamente
                   </Button>
                 </div>
@@ -426,11 +430,16 @@ export default function SecretariaMatriculasPage() {
                     )}
                   </section>
 
+                  <HistoricoAnalisesSecretaria analises={detalhe.analisesSecretaria} />
+
                   <section className="space-y-3 border-t pt-4">
                     <h3 className="font-display font-semibold">Análise da Secretaria</h3>
-                    {detalhe.status !== "PENDENTE" ? (
+                    <p className="text-sm text-muted-foreground">
+                      A análise não altera o status da matrícula. A decisão final é responsabilidade do Coordenador.
+                    </p>
+                    {!["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) ? (
                       <p className="text-sm text-muted-foreground">
-                        Esta matrícula não está pendente de análise documental.
+                        Esta matrícula não permite mais análises documentais.
                       </p>
                     ) : (
                       <form
@@ -469,7 +478,7 @@ export default function SecretariaMatriculasPage() {
                           </p>
                         </div>
                         {erroForm && <p role="alert" className="text-sm text-destructive">{erroForm}</p>}
-                        <Button type="submit" disabled={enviando} className="w-full sm:w-auto">
+                        <Button type="submit" disabled={enviando || carregandoDetalhe || !!erroDetalhe} className="w-full sm:w-auto">
                           {enviando ? "Registrando..." : "Registrar parecer"}
                         </Button>
                       </form>
@@ -481,6 +490,6 @@ export default function SecretariaMatriculasPage() {
           )}
         </DialogContent>
       </Dialog>
-    </MainLayout>
+    </DashboardShell>
   );
 }

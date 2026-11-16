@@ -21,7 +21,27 @@ export class DocumentoMatriculaResponseDto {
   dataEnvio: Date | null;
 }
 
+export class AnaliseSecretariaResponseDto {
+  @ApiProperty({ example: '1' })
+  id: string;
+
+  @ApiProperty({ example: 'DOCUMENTACAO_OK' })
+  resultado: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  parecer: string | null;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  decididoEm: Date;
+
+  @ApiProperty({ example: '1' })
+  usuarioId: string;
+}
+
 export class MatriculaDetalheResponseDto extends MatriculaResponseDto {
   @ApiProperty({ type: [DocumentoMatriculaResponseDto] })
   documentos: DocumentoMatriculaResponseDto[];
+
+  @ApiProperty({ type: [AnaliseSecretariaResponseDto] })
+  analisesSecretaria: AnaliseSecretariaResponseDto[];
 }
