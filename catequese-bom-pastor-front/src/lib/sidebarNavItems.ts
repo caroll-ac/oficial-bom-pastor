@@ -45,6 +45,14 @@ export const PARENT_NAV_ITEMS: SidebarNavItem[] = [
   { label: "Comunicação", to: "/comunicacao", icon: MessageSquare },
 ];
 
+export const SECRETARIA_NAV_ITEMS: SidebarNavItem[] = [
+  { label: "Análise de matrículas", to: "/secretaria/matriculas", icon: ClipboardList },
+];
+
+export const COORDENADOR_NAV_ITEMS: SidebarNavItem[] = [
+  { label: "Aprovação de matrículas", to: "/coordenador/matriculas", icon: ClipboardList },
+];
+
 export function getDashboardNavItems(isAdminRoute: boolean): SidebarNavItem[] {
   return isAdminRoute ? ADMIN_NAV_ITEMS : CATECHIST_NAV_ITEMS;
 }

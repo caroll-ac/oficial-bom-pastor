@@ -31,6 +31,7 @@ import { fetchWithAuth } from "@/lib/api";
 import { API_ROUTES } from "@/lib/routes";
 import { getDashboardNavItems } from "@/lib/sidebarNavItems";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import {
   AlertCircle,
   Calendar,
@@ -382,18 +383,7 @@ export default function MinhasTurmas() {
             </Button>
           </div>
 
-          <div className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gold-light">
-                <Users className="h-5 w-5 text-gold-dark" />
-              </div>
-              <div>
-                <p className="font-medium">
-                  {isAdminRoute ? "Área do Admin" : "Área do Catequista"}
-                </p>
-              </div>
-            </div>
-          </div>
+          <SidebarUser />
 
           <SidebarNav
             items={getDashboardNavItems(isAdminRoute)}

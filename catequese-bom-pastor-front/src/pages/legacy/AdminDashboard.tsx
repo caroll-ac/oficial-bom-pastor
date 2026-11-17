@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { ADMIN_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -557,15 +558,7 @@ export default function AdminDashboard() {
             </Button>
           </div>
 
-          {/* User Info */}
-          <div className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary">
-                <Shield className="h-5 w-5 text-primary-foreground" />
-              </div>
-                <p className="font-medium">{isAdminRoute ? 'Área do Admin' : 'Área do Catequista'}</p>
-            </div>
-          </div>
+          <SidebarUser />
 
           <SidebarNav items={ADMIN_NAV_ITEMS} pathname={location.pathname} />
 

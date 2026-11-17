@@ -6,12 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { API_ROUTES } from "@/lib/routes";
-import { ADMIN_NAV_ITEMS, CATECHIST_NAV_ITEMS, PARENT_NAV_ITEMS } from "@/lib/sidebarNavItems";
+import { ADMIN_NAV_ITEMS, CATECHIST_NAV_ITEMS, COORDENADOR_NAV_ITEMS, PARENT_NAV_ITEMS, SECRETARIA_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { Camera, Cross, Loader2, LogOut, Menu, Save, Trash2, UserRound } from "lucide-react";
 
 type ProfileData = {
@@ -53,8 +54,11 @@ export default function MeuPerfil() {
     ? ADMIN_NAV_ITEMS
     : role === "catequista"
       ? CATECHIST_NAV_ITEMS
-      : PARENT_NAV_ITEMS;
-  const roleLabel = role === "admin" ? "Administrador" : role === "catequista" ? "Catequista" : "Responsável";
+      : role === "secretaria"
+        ? SECRETARIA_NAV_ITEMS
+        : role === "coordenador"
+          ? COORDENADOR_NAV_ITEMS
+          : PARENT_NAV_ITEMS;
 
   useEffect(() => {
     let active = true;
@@ -187,7 +191,7 @@ export default function MeuPerfil() {
               <Menu className="h-5 w-5" />
             </Button>
           </div>
-          <div className="border-b p-4"><p className="font-medium">Área do {roleLabel}</p></div>
+          <SidebarUser />
           <SidebarNav items={navigationItems} pathname={location.pathname} />
           <div className="border-t p-4">
             <Button variant="nav" className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={logout}>

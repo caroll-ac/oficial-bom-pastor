@@ -8,13 +8,7 @@ import { MatriculaResponseDto } from './dto/matricula-response.dto';
 import {
   ParecerSecretariaDto,
   ParecerSecretariaResponseDto,
-  ResultadoSecretaria,
 } from './dto/parecer-secretaria.dto';
-
-const STATUS_POR_RESULTADO: Record<ResultadoSecretaria, string> = {
-  DOCUMENTACAO_OK: 'AGUARDANDO_COORDENADOR',
-  PENDENCIA_DOCUMENTAL: 'PENDENCIA_DOCUMENTAL',
-};
 
 @Injectable()
 export class MatriculaService {
@@ -119,6 +113,11 @@ export class MatriculaService {
           },
           orderBy: { id: 'asc' },
         },
+        decisoes: {
+          where: { etapa: 'SECRETARIA' },
+          select: { id: true, resultado: true, parecer: true, decididoEm: true, usuarioId: true },
+          orderBy: [{ decididoEm: 'asc' }, { id: 'asc' }],
+        },
       },
     });
     if (!matricula) {
@@ -153,6 +152,11 @@ export class MatriculaService {
         parecer: documento.parecer,
         dataEnvio: documento.dataEnvio,
       })),
+      analisesSecretaria: matricula.decisoes.map((decisao) => ({
+        ...decisao,
+        id: decisao.id.toString(),
+        usuarioId: decisao.usuarioId.toString(),
+      })),
     };
   }
 
@@ -182,24 +186,16 @@ export class MatriculaService {
   ): Promise<ParecerSecretariaResponseDto> {
     const matriculaId = this.parseId(idParam, 'ID de matrícula inválido.');
     const usuarioId = this.parseId(usuarioIdParam, 'Identificador inválido.');
-    const novoStatus = STATUS_POR_RESULTADO[dto.resultado];
-
     return this.prisma.$transaction(async (tx) => {
-      // O filtro por PENDENTE garante que só uma análise concorrente vença.
-      const atualizadas = await tx.matricula.updateMany({
-        where: { id: matriculaId, status: 'PENDENTE' },
-        data: { status: novoStatus },
-      });
-
-      if (atualizadas.count === 0) {
-        const existente = await tx.matricula.findUnique({
-          where: { id: matriculaId },
-          select: { status: true },
-        });
-        if (!existente) {
-          throw new NotFoundException('Matrícula não encontrada.');
-        }
-        throw new ConflictException('Apenas matrículas PENDENTE podem ser analisadas.');
+      // Bloqueia a matrícula até o registro da análise para evitar corrida com a decisão final.
+      const [matricula] = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM matricula WHERE id = ${matriculaId} FOR UPDATE
+      `;
+      if (!matricula) {
+        throw new NotFoundException('Matrícula não encontrada.');
+      }
+      if (!['PENDENTE', 'AGUARDANDO_COORDENADOR'].includes(matricula.status)) {
+        throw new ConflictException('Apenas matrículas PENDENTE ou AGUARDANDO_COORDENADOR podem ser analisadas.');
       }
 
       const decisao = await tx.matriculaDecisao.create({
@@ -215,7 +211,7 @@ export class MatriculaService {
 
       return {
         protocolo: matriculaId.toString(),
-        status: novoStatus,
+        status: matricula.status,
         decisao: { ...decisao, id: decisao.id.toString() },
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -230,9 +226,9 @@ export class MatriculaService {
     const usuarioId = this.parseId(usuarioIdParam, 'Identificador inválido.');
 
     return this.prisma.$transaction(async (tx) => {
-      // O filtro por AGUARDANDO_COORDENADOR garante que só uma decisão concorrente vença.
+      // O filtro de status garante que só uma decisão concorrente vença.
       const atualizadas = await tx.matricula.updateMany({
-        where: { id: matriculaId, status: 'AGUARDANDO_COORDENADOR' },
+        where: { id: matriculaId, status: { in: ['PENDENTE', 'AGUARDANDO_COORDENADOR'] } },
         data: {
           status: dto.resultado,
           dataAprovacao: dto.resultado === 'APROVADA' ? new Date() : null,
@@ -247,7 +243,7 @@ export class MatriculaService {
         if (!existente) {
           throw new NotFoundException('Matrícula não encontrada.');
         }
-        throw new ConflictException('Apenas matrículas AGUARDANDO_COORDENADOR podem ser decididas.');
+        throw new ConflictException('Apenas matrículas PENDENTE ou AGUARDANDO_COORDENADOR podem ser decididas.');
       }
 
       const decisao = await tx.matriculaDecisao.create({

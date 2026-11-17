@@ -22,6 +22,7 @@ import { SendMessageDialog } from "@/components/comunicacao/SendMessageDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { ADMIN_NAV_ITEMS, CATECHIST_NAV_ITEMS, PARENT_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { Link, useLocation } from "react-router-dom";
 import {
@@ -91,17 +92,7 @@ export default function Comunicacao() {
               <Menu className="h-5 w-5" />
             </Button>
           </div>
-          <div className="border-b p-4">
-            <p className="font-medium">
-              {activeRole === "admin"
-                ? "Área do Admin"
-                : activeRole === "catequista"
-                  ? "Área do Catequista"
-                  : activeRole === "responsavel"
-                    ? "Área do Responsável"
-                    : "Carregando perfil..."}
-            </p>
-          </div>
+          <SidebarUser />
           <SidebarNav items={navigationItems} pathname={location.pathname} />
           <div className="border-t p-4">
             <Button

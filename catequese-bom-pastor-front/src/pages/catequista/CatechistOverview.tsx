@@ -113,8 +113,8 @@ export default function CatechistOverview() {
   return (
     <DashboardShell
       items={CATECHIST_NAV_ITEMS}
-      title="Visão geral"
-      description="Resumo das suas turmas e atividades de catequese"
+      title="Área do Catequista"
+      description="Acompanhe turmas, cronograma, frequência e materiais."
     >
       <div className="flex justify-end">
         <Button variant="outline" size="sm" className="gap-2" onClick={() => void loadDashboard(true)} disabled={loading || refreshing}>

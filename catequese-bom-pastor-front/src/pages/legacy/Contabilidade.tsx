@@ -42,6 +42,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { usePersistentSidebar } from "@/hooks/usePersistentSidebar";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { SidebarUser } from "@/components/layout/SidebarUser";
 import { ADMIN_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { Link, useLocation } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -235,10 +236,10 @@ const Contabilidade = () => {
   };
 
   return (
-    <div className={`flex min-h-screen bg-background transition-[padding] duration-300 ${sidebarOpen ? "lg:pl-16" : "lg:pl-0"}`}>
+    <div className={`flex min-h-screen bg-background transition-[padding] duration-300 ${sidebarOpen ? "lg:pl-64" : "lg:pl-0"}`}>
       {/* Sidebar */}
       <aside
-        className={`group/sidebar fixed inset-y-0 left-0 z-50 w-64 transform overflow-hidden border-r bg-card transition-[width,transform] duration-300 lg:w-16 lg:hover:w-64 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 transform overflow-hidden border-r bg-card transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         } `}
       >
@@ -248,7 +249,7 @@ const Contabilidade = () => {
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary">
                 <Cross className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="hidden font-display text-lg font-semibold lg:inline-block lg:max-w-0 lg:overflow-hidden lg:whitespace-nowrap lg:opacity-0 lg:transition-all lg:duration-200 lg:group-hover/sidebar:max-w-none lg:group-hover/sidebar:opacity-100">
+              <span className="font-display text-lg font-semibold">
                 Catequese
               </span>
             </Link>
@@ -257,27 +258,18 @@ const Contabilidade = () => {
             </Button>
           </div>
 
-          <div className="border-b p-3 lg:p-4">
-            <div className="flex items-center gap-3 lg:justify-center lg:group-hover/sidebar:justify-start">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary">
-                <DollarSign className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div className="hidden lg:block lg:max-w-0 lg:overflow-hidden lg:whitespace-nowrap lg:opacity-0 lg:transition-all lg:duration-200 lg:group-hover/sidebar:max-w-none lg:group-hover/sidebar:opacity-100">
-                <p className="font-medium">Área do Admin</p>
-              </div>
-            </div>
-          </div>
+          <SidebarUser />
 
-          <SidebarNav items={ADMIN_NAV_ITEMS} pathname={location.pathname} collapsible />
+          <SidebarNav items={ADMIN_NAV_ITEMS} pathname={location.pathname} />
 
           <div className="border-t p-3 lg:p-4">
             <Button
               variant="nav"
-              className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive lg:justify-start"
+              className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={handleLogout}
             >
-              <LogOut className="h-4 w-4 lg:mr-3" />
-              <span className="hidden lg:inline-block lg:max-w-0 lg:overflow-hidden lg:whitespace-nowrap lg:opacity-0 lg:transition-all lg:duration-200 lg:group-hover/sidebar:max-w-none lg:group-hover/sidebar:opacity-100">
+              <LogOut className="mr-3 h-4 w-4" />
+              <span>
                 Sair
               </span>
             </Button>

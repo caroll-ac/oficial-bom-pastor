@@ -44,7 +44,7 @@ export class ParecerSecretariaResponseDto {
   @ApiProperty({ example: '9007199254740995' })
   protocolo: string;
 
-  @ApiProperty({ example: 'AGUARDANDO_COORDENADOR' })
+  @ApiProperty({ example: 'PENDENTE' })
   status: string;
 
   @ApiProperty({ type: DecisaoMatriculaResponseDto })

@@ -19,6 +19,7 @@ describe('Matrícula MVP', () => {
     etapaCatequetica: { findMany: jest.fn(), findFirst: jest.fn() },
     matricula: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
     matriculaDecisao: { create: jest.fn() },
+    $queryRaw: jest.fn(),
     $transaction: jest.fn(),
   };
   const token = (perfis: UserRole[], id = '42') => jwt.sign(
@@ -207,6 +208,22 @@ describe('Matrícula MVP', () => {
           dataEnvio: null,
         },
       ],
+      decisoes: [
+        {
+          id: 9007199254740998n,
+          resultado: 'PENDENCIA_DOCUMENTAL',
+          parecer: 'Falta comprovante.',
+          decididoEm: new Date('2026-02-04T09:00:00.000Z'),
+          usuarioId: 9007199254740999n,
+        },
+        {
+          id: 9007199254741000n,
+          resultado: 'DOCUMENTACAO_OK',
+          parecer: 'Documentação conferida.',
+          decididoEm: new Date('2026-02-05T09:00:00.000Z'),
+          usuarioId: 7n,
+        },
+      ],
     };
 
     it('exige autenticação e restringe o detalhe à equipe responsável', async () => {
@@ -285,6 +302,22 @@ describe('Matrícula MVP', () => {
               dataEnvio: null,
             },
           ],
+          analisesSecretaria: [
+            {
+              id: '9007199254740998',
+              resultado: 'PENDENCIA_DOCUMENTAL',
+              parecer: 'Falta comprovante.',
+              decididoEm: '2026-02-04T09:00:00.000Z',
+              usuarioId: '9007199254740999',
+            },
+            {
+              id: '9007199254741000',
+              resultado: 'DOCUMENTACAO_OK',
+              parecer: 'Documentação conferida.',
+              decididoEm: '2026-02-05T09:00:00.000Z',
+              usuarioId: '7',
+            },
+          ],
         });
         expect(response.body).not.toHaveProperty('observacao');
         expect(response.body).not.toHaveProperty('decisoes');
@@ -304,9 +337,22 @@ describe('Matrícula MVP', () => {
       expect(args.where).toEqual({ id: 9007199254740995n });
       expect(args.select.documentos.orderBy).toEqual({ id: 'asc' });
       expect(args.select.etapa).toEqual({ select: { id: true, nome: true } });
-      for (const campo of ['observacao', 'dataAprovacao', 'responsavelId', 'decisoes', 'responsavel', 'catequizando']) {
+      expect(args.select.decisoes).toEqual({
+        where: { etapa: 'SECRETARIA' },
+        select: { id: true, resultado: true, parecer: true, decididoEm: true, usuarioId: true },
+        orderBy: [{ decididoEm: 'asc' }, { id: 'asc' }],
+      });
+      for (const campo of ['observacao', 'dataAprovacao', 'responsavelId', 'responsavel', 'catequizando']) {
         expect(args.select).not.toHaveProperty(campo);
       }
+    });
+
+    it('retorna lista vazia quando não há análises da Secretaria', async () => {
+      prisma.matricula.findUnique.mockResolvedValue({ ...registro, decisoes: [] });
+      const response = await request(app.getHttpServer()).get('/api/matriculas/9007199254740995')
+        .set('Authorization', auth([USER_ROLES.COORDENADOR]))
+        .expect(200);
+      expect(response.body.analisesSecretaria).toEqual([]);
     });
   });
 
@@ -316,7 +362,7 @@ describe('Matrícula MVP', () => {
     const decididoEm = new Date('2026-02-04T09:00:00.000Z');
 
     beforeEach(() => {
-      prisma.matricula.updateMany.mockResolvedValue({ count: 1 });
+      prisma.$queryRaw.mockResolvedValue([{ status: 'PENDENTE' }]);
       prisma.matriculaDecisao.create.mockImplementation(async ({ data }) => ({
         id: 9007199254740999n,
         etapa: data.etapa,
@@ -347,7 +393,7 @@ describe('Matrícula MVP', () => {
       ['campo extra', '1', { ...corpo, status: 'APROVADA' }],
     ])('rejeita com 400: %s', async (_nome, id, body) => {
       await enviar(USER_ROLES.SECRETARIA, body, `/api/matriculas/${id}/parecer-secretaria`).expect(400);
-      expect(prisma.matricula.updateMany).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('aceita parecer com exatamente 1000 caracteres', async () => {
@@ -355,31 +401,35 @@ describe('Matrícula MVP', () => {
     });
 
     it('retorna 404 quando a matrícula não existe', async () => {
-      prisma.matricula.updateMany.mockResolvedValue({ count: 0 });
-      prisma.matricula.findUnique.mockResolvedValue(null);
+      prisma.$queryRaw.mockResolvedValue([]);
       await enviar(USER_ROLES.SECRETARIA, corpo).expect(404);
       expect(prisma.matriculaDecisao.create).not.toHaveBeenCalled();
     });
 
-    it('retorna 409 quando a matrícula não está PENDENTE', async () => {
-      prisma.matricula.updateMany.mockResolvedValue({ count: 0 });
-      prisma.matricula.findUnique.mockResolvedValue({ status: 'AGUARDANDO_COORDENADOR' });
+    it.each(['PENDENCIA_DOCUMENTAL', 'APROVADA', 'REJEITADA'])('retorna 409 para status %s', async (status) => {
+      prisma.$queryRaw.mockResolvedValue([{ status }]);
       await enviar(USER_ROLES.SECRETARIA, corpo).expect(409);
       expect(prisma.matriculaDecisao.create).not.toHaveBeenCalled();
     });
 
-    it.each([USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA])(
-      'DOCUMENTACAO_OK move para AGUARDANDO_COORDENADOR e registra a decisão (%s)',
-      async (perfil) => {
-        const response = await enviar(perfil, { ...corpo, parecer: '  Documentos conferidos.  ' }).expect(201);
+    it.each<[UserRole, string, string]>([
+      [USER_ROLES.ADMINISTRADOR, 'PENDENTE', 'DOCUMENTACAO_OK'],
+      [USER_ROLES.SECRETARIA, 'PENDENTE', 'PENDENCIA_DOCUMENTAL'],
+      [USER_ROLES.SECRETARIA, 'AGUARDANDO_COORDENADOR', 'DOCUMENTACAO_OK'],
+      [USER_ROLES.ADMINISTRADOR, 'AGUARDANDO_COORDENADOR', 'PENDENCIA_DOCUMENTAL'],
+    ])(
+      'registra análise para %s, mantendo %s com resultado %s',
+      async (perfil, status, resultado) => {
+        prisma.$queryRaw.mockResolvedValue([{ status }]);
+        const response = await enviar(perfil, { resultado, parecer: '  Documentos conferidos.  ' }).expect(201);
 
         expect(response.body).toEqual({
           protocolo: '9007199254740995',
-          status: 'AGUARDANDO_COORDENADOR',
+          status,
           decisao: {
             id: '9007199254740999',
             etapa: 'SECRETARIA',
-            resultado: 'DOCUMENTACAO_OK',
+            resultado,
             parecer: 'Documentos conferidos.',
             decididoEm: '2026-02-04T09:00:00.000Z',
           },
@@ -387,16 +437,17 @@ describe('Matrícula MVP', () => {
         expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         });
-        expect(prisma.matricula.updateMany).toHaveBeenCalledWith({
-          where: { id: 9007199254740995n, status: 'PENDENTE' },
-          data: { status: 'AGUARDANDO_COORDENADOR' },
-        });
+        expect(prisma.matricula.updateMany).not.toHaveBeenCalled();
+        expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+        const [query, id] = prisma.$queryRaw.mock.calls[0];
+        expect(query.join('?')).toMatch(/FOR UPDATE/i);
+        expect(id).toBe(9007199254740995n);
         expect(prisma.matriculaDecisao.create).toHaveBeenCalledWith({
           data: {
             matriculaId: 9007199254740995n,
             usuarioId: 7n,
             etapa: 'SECRETARIA',
-            resultado: 'DOCUMENTACAO_OK',
+            resultado,
             parecer: 'Documentos conferidos.',
           },
           select: { id: true, etapa: true, resultado: true, parecer: true, decididoEm: true },
@@ -404,22 +455,16 @@ describe('Matrícula MVP', () => {
       },
     );
 
-    it('PENDENCIA_DOCUMENTAL mantém o status de pendência e persiste o parecer', async () => {
-      const response = await enviar(USER_ROLES.SECRETARIA, {
+    it('permite análises sucessivas sem alterar o status', async () => {
+      const primeira = await enviar(USER_ROLES.SECRETARIA, {
         resultado: 'PENDENCIA_DOCUMENTAL',
         parecer: 'Falta comprovante de residência.',
       }).expect(201);
-
-      expect(response.body.status).toBe('PENDENCIA_DOCUMENTAL');
-      expect(response.body.decisao).toMatchObject({
-        etapa: 'SECRETARIA',
-        resultado: 'PENDENCIA_DOCUMENTAL',
-        parecer: 'Falta comprovante de residência.',
-      });
-      expect(prisma.matricula.updateMany).toHaveBeenCalledWith({
-        where: { id: 9007199254740995n, status: 'PENDENTE' },
-        data: { status: 'PENDENCIA_DOCUMENTAL' },
-      });
+      const segunda = await enviar(USER_ROLES.SECRETARIA, corpo).expect(201);
+      expect(primeira.body.status).toBe('PENDENTE');
+      expect(segunda.body.status).toBe('PENDENTE');
+      expect(prisma.matriculaDecisao.create).toHaveBeenCalledTimes(2);
+      expect(prisma.matricula.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -475,7 +520,7 @@ describe('Matrícula MVP', () => {
       expect(prisma.matriculaDecisao.create).not.toHaveBeenCalled();
     });
 
-    it.each(['PENDENTE', 'PENDENCIA_DOCUMENTAL', 'APROVADA', 'REJEITADA'])(
+    it.each(['PENDENCIA_DOCUMENTAL', 'APROVADA', 'REJEITADA'])(
       'retorna 409 quando a matrícula está %s',
       async (status) => {
         prisma.matricula.updateMany.mockResolvedValue({ count: 0 });
@@ -505,7 +550,7 @@ describe('Matrícula MVP', () => {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         });
         expect(prisma.matricula.updateMany).toHaveBeenCalledWith({
-          where: { id: 9007199254740995n, status: 'AGUARDANDO_COORDENADOR' },
+          where: { id: 9007199254740995n, status: { in: ['PENDENTE', 'AGUARDANDO_COORDENADOR'] } },
           data: { status: 'APROVADA', dataAprovacao: expect.any(Date) },
         });
         expect(prisma.matriculaDecisao.create).toHaveBeenCalledWith({
@@ -518,6 +563,23 @@ describe('Matrícula MVP', () => {
           },
           select: { id: true, etapa: true, resultado: true, parecer: true, decididoEm: true },
         });
+      },
+    );
+
+    it.each(['PENDENTE', 'AGUARDANDO_COORDENADOR'])(
+      'aprova matrícula no status %s e impede decisão repetida',
+      async (statusInicial) => {
+        let status = statusInicial;
+        prisma.matricula.updateMany.mockImplementation(async ({ where, data }) => {
+          if (!where.status.in.includes(status)) return { count: 0 };
+          status = data.status;
+          return { count: 1 };
+        });
+        prisma.matricula.findUnique.mockImplementation(async () => ({ status }));
+
+        await enviar(USER_ROLES.COORDENADOR, corpo).expect(201);
+        await enviar(USER_ROLES.COORDENADOR, corpo).expect(409);
+        expect(prisma.matriculaDecisao.create).toHaveBeenCalledTimes(1);
       },
     );
 
@@ -534,7 +596,7 @@ describe('Matrícula MVP', () => {
         parecer: 'Idade incompatível com a etapa.',
       });
       expect(prisma.matricula.updateMany).toHaveBeenCalledWith({
-        where: { id: 9007199254740995n, status: 'AGUARDANDO_COORDENADOR' },
+        where: { id: 9007199254740995n, status: { in: ['PENDENTE', 'AGUARDANDO_COORDENADOR'] } },
         data: { status: 'REJEITADA', dataAprovacao: null },
       });
     });

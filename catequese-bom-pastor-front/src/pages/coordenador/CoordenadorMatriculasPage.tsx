@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { MainLayout } from "@/components/layout/MainLayout";
+import { DashboardShell } from "@/components/layout/DashboardShell";
+import { HistoricoAnalisesSecretaria, type AnaliseSecretaria } from "@/components/matriculas/HistoricoAnalisesSecretaria";
+import { MatriculaStatusBadge } from "@/components/matriculas/MatriculaStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +14,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { statusMatriculaConfig } from "@/lib/matriculaStatus";
 import { API_ROUTES } from "@/lib/routes";
+import { COORDENADOR_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { cn } from "@/lib/utils";
 
 interface MatriculaResponse {
@@ -38,6 +42,7 @@ interface MatriculaResponse {
 }
 
 interface MatriculaDetalheResponse extends MatriculaResponse {
+  analisesSecretaria: AnaliseSecretaria[];
   documentos: {
     id: string;
     tipoDocumento: string;
@@ -49,15 +54,6 @@ interface MatriculaDetalheResponse extends MatriculaResponse {
 }
 
 type Resultado = "APROVADA" | "REJEITADA";
-
-const statusConfig: Record<string, { label: string; className: string }> = {
-  PENDENTE: { label: "Pendente", className: "border-transparent bg-gray-100 text-gray-800" },
-  EM_ANALISE: { label: "Em análise", className: "border-transparent bg-blue-100 text-blue-800" },
-  AGUARDANDO_COORDENADOR: { label: "Aguardando coordenador", className: "border-transparent bg-indigo-100 text-indigo-800" },
-  PENDENCIA_DOCUMENTAL: { label: "Pendência documental", className: "border-transparent bg-amber-100 text-amber-800" },
-  APROVADA: { label: "Aprovada", className: "border-transparent bg-green-100 text-green-800" },
-  REJEITADA: { label: "Rejeitada", className: "border-transparent bg-red-100 text-red-800" },
-};
 
 const tiposDocumento: Record<string, string> = {
   CERTIDAO_NASCIMENTO: "Certidão de Nascimento",
@@ -77,11 +73,8 @@ const formatarData = (iso: string | null) => {
   return Number.isNaN(data.getTime()) ? "—" : data.toLocaleDateString("pt-BR", { timeZone: "UTC" });
 };
 
-const StatusBadge = ({ status, config = statusConfig }: {
-  status: string;
-  config?: Record<string, { label: string; className: string }>;
-}) => {
-  const estilo = config[status] ?? { label: status, className: "border-transparent bg-gray-100 text-gray-800" };
+const DocumentoStatusBadge = ({ status }: { status: string }) => {
+  const estilo = statusDocumento[status] ?? { label: status, className: "border-transparent bg-gray-100 text-gray-800" };
   return <Badge className={cn("whitespace-nowrap", estilo.className)}>{estilo.label}</Badge>;
 };
 
@@ -98,7 +91,7 @@ function mensagemErro(status: number, acao: string) {
     401: "Sessão expirada. Faça login novamente.",
     403: "Você não tem permissão para realizar esta ação.",
     404: "Matrícula não encontrada.",
-    409: "Esta matrícula não está mais aguardando decisão. Atualize os dados.",
+    409: "Esta matrícula não permite mais uma decisão. Atualize os dados.",
   };
   return mensagens[status] ?? `Não foi possível ${acao}. Tente novamente.`;
 }
@@ -182,7 +175,7 @@ export default function CoordenadorMatriculasPage() {
   };
 
   const registrarDecisao = async () => {
-    if (!detalhe || detalhe.status !== "AGUARDANDO_COORDENADOR" || enviandoRef.current) return;
+    if (!detalhe || !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) || enviandoRef.current) return;
     const texto = parecer.trim();
     if (!resultado) {
       setErroForm("Selecione o resultado da decisão.");
@@ -219,7 +212,7 @@ export default function CoordenadorMatriculasPage() {
       setDetalhe((atual) => atual && atual.protocolo === detalhe.protocolo ? { ...atual, status: dados.status } : atual);
       setResultado("");
       setParecer("");
-      toast({ title: "Decisão registrada", description: `Matrícula ${detalhe.protocolo}: ${statusConfig[dados.status]?.label ?? dados.status}.` });
+      toast({ title: "Decisão registrada", description: `Matrícula ${detalhe.protocolo}: ${statusMatriculaConfig[dados.status]?.label ?? dados.status}.` });
     } catch {
       toast({
         variant: "destructive",
@@ -234,10 +227,10 @@ export default function CoordenadorMatriculasPage() {
 
   const contagem = (status: string) => matriculas.filter((m) => m.status === status).length;
   const indicadores = [
-    { titulo: "Matrículas Pendentes", valor: contagem("PENDENTE") },
-    { titulo: "Aguardando Coordenador", valor: contagem("AGUARDANDO_COORDENADOR") },
-    { titulo: "Pendência Documental", valor: contagem("PENDENCIA_DOCUMENTAL") },
+    { titulo: "Aguardando decisão", valor: contagem("AGUARDANDO_COORDENADOR") },
     { titulo: "Aprovadas", valor: contagem("APROVADA") },
+    { titulo: "Rejeitadas", valor: contagem("REJEITADA") },
+    { titulo: "Total", valor: matriculas.length },
   ];
   const matriculasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -248,16 +241,13 @@ export default function CoordenadorMatriculasPage() {
   }, [matriculas, busca, filtroStatus]);
 
   return (
-    <MainLayout>
-      <section className="bg-gradient-to-br from-background via-muted/30 to-sage-light/20 px-4 py-8 md:py-12">
-        <div className="mx-auto max-w-6xl space-y-6">
-          <div>
-            <h1 className="font-display text-2xl font-bold md:text-3xl">Aprovação de Matrículas</h1>
-            <p className="text-muted-foreground">Área do Coordenador — decisão final sobre as matrículas analisadas.</p>
-          </div>
-
+    <DashboardShell
+      items={COORDENADOR_NAV_ITEMS}
+      title="Área do Coordenador"
+      description="Avalie as matrículas e registre a decisão final."
+    >
           {!carregando && !erro && (
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {indicadores.map((i) => (
                 <Card key={i.titulo} variant="elevated">
                   <CardHeader className="pb-2">
@@ -269,11 +259,11 @@ export default function CoordenadorMatriculasPage() {
             </div>
           )}
 
-          <Card variant="elevated">
+          <Card variant="elevated" className="min-w-0">
             <CardHeader>
-              <CardTitle>Matrículas</CardTitle>
+              <CardTitle>Lista de matrículas</CardTitle>
               <CardDescription>
-                {carregando ? "Carregando matrículas..." : erro ? "Não foi possível carregar a lista." : `${matriculasFiltradas.length} de ${matriculas.length} matrículas`}
+                {carregando ? "Carregando matrículas..." : erro ? "Não foi possível carregar a lista." : `${matriculasFiltradas.length} de ${matriculas.length} matrículas encontradas`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -287,7 +277,7 @@ export default function CoordenadorMatriculasPage() {
                   <SelectTrigger className="sm:w-56" aria-label="Filtrar por status"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="TODOS">Todos</SelectItem>
-                    {Object.entries(statusConfig).map(([valor, config]) => (
+                    {Object.entries(statusMatriculaConfig).map(([valor, config]) => (
                       <SelectItem key={valor} value={valor}>{config.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -300,7 +290,7 @@ export default function CoordenadorMatriculasPage() {
               )}
               {carregando && <p role="status" className="text-sm text-muted-foreground">Carregando matrículas...</p>}
               {!carregando && !erro && (
-                <Table>
+                <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Protocolo</TableHead><TableHead>Responsável</TableHead><TableHead>Catequizando</TableHead>
@@ -319,7 +309,7 @@ export default function CoordenadorMatriculasPage() {
                         <TableCell className="whitespace-nowrap">{m.catequizando.nome}</TableCell>
                         <TableCell className="whitespace-nowrap">{m.etapa.nome}</TableCell>
                         <TableCell className="whitespace-nowrap">{formatarData(m.dataSolicitacao)}</TableCell>
-                        <TableCell><StatusBadge status={m.status} /></TableCell>
+                        <TableCell><MatriculaStatusBadge status={m.status} /></TableCell>
                         <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => abrir(m)}>Visualizar</Button></TableCell>
                       </TableRow>
                     ))}
@@ -328,9 +318,6 @@ export default function CoordenadorMatriculasPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </section>
-
       <Dialog open={!!selecionada} onOpenChange={(aberto) => { if (!aberto) fechar(); }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
@@ -347,7 +334,7 @@ export default function CoordenadorMatriculasPage() {
           {detalhe && (
             <>
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <StatusBadge status={detalhe.status} />
+                <MatriculaStatusBadge status={detalhe.status} />
                 <span>{detalhe.etapa.nome} • {formatarData(detalhe.dataSolicitacao)}</span>
               </div>
               <section className="space-y-2">
@@ -380,7 +367,7 @@ export default function CoordenadorMatriculasPage() {
                               <span className="block break-all text-muted-foreground">{d.nomeArquivo}</span>
                             </span>
                           </span>
-                          <StatusBadge status={d.status} config={statusDocumento} />
+                          <DocumentoStatusBadge status={d.status} />
                         </div>
                         <dl className="grid gap-2 sm:grid-cols-2">
                           <Dado label="Data de envio" valor={formatarData(d.dataEnvio)} />
@@ -391,10 +378,11 @@ export default function CoordenadorMatriculasPage() {
                   </ul>
                 )}
               </section>
+              <HistoricoAnalisesSecretaria analises={detalhe.analisesSecretaria} />
               <section className="space-y-3 border-t pt-4">
                 <h3 className="font-display font-semibold">Decisão do Coordenador</h3>
-                {detalhe.status !== "AGUARDANDO_COORDENADOR" ? (
-                  <p className="text-sm text-muted-foreground">Esta matrícula não está aguardando decisão do Coordenador.</p>
+                {!["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) ? (
+                  <p className="text-sm text-muted-foreground">Esta matrícula não permite mais uma decisão do Coordenador.</p>
                 ) : (
                   <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void registrarDecisao(); }}>
                     <div className="space-y-1.5">
@@ -423,6 +411,6 @@ export default function CoordenadorMatriculasPage() {
           )}
         </DialogContent>
       </Dialog>
-    </MainLayout>
+    </DashboardShell>
   );
 }
