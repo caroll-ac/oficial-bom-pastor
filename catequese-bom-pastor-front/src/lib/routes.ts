@@ -35,17 +35,4 @@ export const API_ROUTES = {
   catequistas: "/api/catequistas",
   lojinhaReservas: "/api/loja/itens/reservas",
   lojinhaReservasAdmin: "/api/loja/itens/reservas",
-  comunicacao: {
-    recipients: "/api/comunicacao/recipients",
-    send: "/api/comunicacao/send",
-    messages: "/api/comunicacao/messages",
-    unreadCount: "/api/comunicacao/unread-count",
-    markAsRead: "/api/comunicacao/mark-as-read",
-  },
-  notificacoes: {
-    base: "/api/notificacoes",
-    unreadCount: "/api/notificacoes/unread-count",
-    markAsRead: "/api/notificacoes/mark-as-read",
-    markAllAsRead: "/api/notificacoes/mark-all-as-read",
-  },
 };

@@ -24,7 +24,6 @@ import PrimeiroAcesso from "@/pages/public/PrimeiroAcesso";
 import Sobre from "@/pages/public/Sobre";
 import ProtectedRoute from "@/components/auth/protectedRoute";
 import Photos from "@/pages/legacy/Photos";
-import Comunicacao from "@/pages/shared/Comunicacao";
 import MeuPerfil from "@/pages/shared/MeuPerfil";
 import AdminOverview from "@/pages/legacy/AdminOverview";
 import CatechistOverview from "@/pages/catequista/CatechistOverview";
@@ -86,8 +85,6 @@ const AppRoutes = () => (
                 <Route path="/catequista/cronograma" element={<Cronograma />} />
                 <Route path="/catequista/material" element={<Material />} />
                 <Route path="/catequista/musicas" element={<Musicas />} />
-                {/* Rotas Gerais (autenticadas) */}
-                <Route path="/comunicacao" element={<Comunicacao />} />
               </Route>
 
               <Route path="*" element={<NotFound />} />

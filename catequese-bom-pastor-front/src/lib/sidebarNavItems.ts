@@ -5,7 +5,6 @@ import {
   ClipboardList,
   DollarSign,
   FileText,
-  MessageSquare,
   Music,
   Users,
 } from "lucide-react";
@@ -24,7 +23,6 @@ export const ADMIN_NAV_ITEMS: SidebarNavItem[] = [
   { label: "Fotos", to: "/admin/fotos", icon: Camera },
   { label: "Contabilidade", to: "/admin/contabilidade", icon: DollarSign },
   { label: "Histórico", to: "/admin/historico", icon: Calendar },
-  { label: "Comunicação", to: "/comunicacao", icon: MessageSquare },
 ];
 
 export const CATECHIST_NAV_ITEMS: SidebarNavItem[] = [
@@ -34,7 +32,6 @@ export const CATECHIST_NAV_ITEMS: SidebarNavItem[] = [
   { label: "Cronograma", to: "/catequista/cronograma", icon: Calendar },
   // { label: "Material", to: "/catequista/material", icon: BookOpen },
   // { label: "Músicas", to: "/catequista/musicas", icon: Music },
-  { label: "Comunicação", to: "/comunicacao", icon: MessageSquare },
 ];
 
 export const PARENT_NAV_ITEMS: SidebarNavItem[] = [
@@ -42,7 +39,6 @@ export const PARENT_NAV_ITEMS: SidebarNavItem[] = [
   { label: "Renovação", to: "/pais/renovacao", icon: ClipboardList },
   { label: "Cronograma", to: "/pais/cronograma", icon: Calendar },
   { label: "Documentos", to: "/pais/documentos", icon: FileText,},
-  { label: "Comunicação", to: "/comunicacao", icon: MessageSquare },
 ];
 
 export const SECRETARIA_NAV_ITEMS: SidebarNavItem[] = [
