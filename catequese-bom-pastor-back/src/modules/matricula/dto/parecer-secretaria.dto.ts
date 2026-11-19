@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsIn, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
-export const RESULTADOS_SECRETARIA = ['DOCUMENTACAO_OK', 'PENDENCIA_DOCUMENTAL'] as const;
+export const RESULTADOS_SECRETARIA = ['DOCUMENTACAO_OK', 'PENDENCIA_DOCUMENTAL', 'OBSERVACAO'] as const;
 export type ResultadoSecretaria = (typeof RESULTADOS_SECRETARIA)[number];
 
 export const trim = ({ obj, key }: { obj: Record<string, unknown>; key: string }) => {

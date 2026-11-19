@@ -1,14 +1,19 @@
 export interface AnaliseSecretaria {
   id: string;
   resultado: string;
-  parecer: string;
+  parecer: string | null;
   decididoEm: string;
   usuarioId: string;
+  usuarioNome: string;
 }
 
 const resultados: Record<string, string> = {
   DOCUMENTACAO_OK: "Documentação OK",
   PENDENCIA_DOCUMENTAL: "Pendência documental",
+  OBSERVACAO: "Observação",
+  DOCUMENTO_ADICIONADO: "Documento adicionado",
+  DOCUMENTO_SUBSTITUIDO: "Documento substituído",
+  DOCUMENTO_ATUALIZADO: "Documento atualizado",
 };
 
 export function HistoricoAnalisesSecretaria({ analises }: { analises: AnaliseSecretaria[] }) {
@@ -23,11 +28,14 @@ export function HistoricoAnalisesSecretaria({ analises }: { analises: AnaliseSec
             const data = new Date(analise.decididoEm);
             return (
               <li key={analise.id} className="space-y-1 rounded-md border p-3 text-sm">
-                <p className="font-medium">{resultados[analise.resultado] ?? analise.resultado}</p>
+                <p className="font-medium">
+                  {resultados[analise.resultado] ? `${resultados[analise.resultado]} (${analise.resultado})` : analise.resultado}
+                </p>
                 <p className="text-muted-foreground">
                   {Number.isNaN(data.getTime()) ? "—" : data.toLocaleString("pt-BR")}
                 </p>
-                <p className="whitespace-pre-wrap break-words">{analise.parecer}</p>
+                <p className="break-words text-muted-foreground">Usuário: {analise.usuarioNome}</p>
+                <p className="whitespace-pre-wrap break-words">{analise.parecer ?? "—"}</p>
               </li>
             );
           })}

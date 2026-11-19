@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { USER_ROLES, UserRole } from '../../common/constants/user-roles';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CreateDocumentoDto } from './dto/create-documento.dto';
+import { AdicionarDocumentoDto, AtualizarDocumentoDto, SubstituirDocumentoDto } from './dto/operacao-documento.dto';
 
 export interface UsuarioAutenticado {
   id: string;
@@ -25,16 +25,92 @@ type DocumentoSelecionado = Prisma.DocumentoGetPayload<{ select: typeof document
 export class DocumentoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async criar(matriculaId: string, dto: CreateDocumentoDto) {
+  async criar(matriculaId: string, usuarioId: string, dto: AdicionarDocumentoDto) {
     const id = this.parseId(matriculaId);
-    return this.prisma.$transaction(async (tx) => {
-      const matricula = await tx.matricula.findUnique({ where: { id }, select: { id: true } });
-      if (!matricula) throw new NotFoundException('Matrícula não encontrada.');
+    const autorId = this.parseId(usuarioId);
+    return this.transacao(async (tx) => {
+      await this.bloquearMatricula(tx, id);
       const documento = await tx.documento.create({
         data: { matriculaId: id, nomeArquivo: dto.nomeArquivo, tipoDocumento: dto.tipoDocumento, status: 'PENDENTE', parecer: null },
         select: documentoSelect,
       });
+      await this.registrarHistorico(tx, id, autorId, 'DOCUMENTO_ADICIONADO',
+        `Documento ${documento.id} (${documento.tipoDocumento}) adicionado: ${documento.nomeArquivo}.`, dto.observacao);
       return this.serializar(documento);
+    });
+  }
+
+  async substituir(matriculaId: string, documentoId: string, usuarioId: string, dto: SubstituirDocumentoDto) {
+    const id = this.parseId(matriculaId);
+    const docId = this.parseId(documentoId);
+    const autorId = this.parseId(usuarioId);
+    return this.transacao(async (tx) => {
+      await this.bloquearMatricula(tx, id);
+      const anterior = await tx.documento.findFirst({ where: { id: docId, matriculaId: id }, select: documentoSelect });
+      if (!anterior) throw new NotFoundException('Documento não encontrado.');
+      const documento = await tx.documento.update({
+        where: { id: docId },
+        data: { nomeArquivo: dto.nomeArquivo, status: 'PENDENTE', parecer: null, dataEnvio: new Date() },
+        select: documentoSelect,
+      });
+      await this.registrarHistorico(tx, id, autorId, 'DOCUMENTO_SUBSTITUIDO',
+        `Documento ${docId} (${anterior.tipoDocumento}) substituído: ${anterior.nomeArquivo} → ${documento.nomeArquivo}. Status anterior: ${anterior.status}. Parecer anterior: ${anterior.parecer ?? 'não informado'}.`, dto.observacao);
+      return this.serializar(documento);
+    });
+  }
+
+  async atualizar(matriculaId: string, documentoId: string, usuarioId: string, dto: AtualizarDocumentoDto) {
+    const id = this.parseId(matriculaId);
+    const docId = this.parseId(documentoId);
+    const autorId = this.parseId(usuarioId);
+    if (dto.status === undefined && dto.parecer === undefined) {
+      throw new BadRequestException('Informe status ou parecer para atualizar.');
+    }
+    return this.transacao(async (tx) => {
+      await this.bloquearMatricula(tx, id);
+      const anterior = await tx.documento.findFirst({ where: { id: docId, matriculaId: id }, select: documentoSelect });
+      if (!anterior) throw new NotFoundException('Documento não encontrado.');
+      const documento = await tx.documento.update({
+        where: { id: docId },
+        data: {
+          ...(dto.status !== undefined && { status: dto.status }),
+          ...(dto.parecer !== undefined && { parecer: dto.parecer || null }),
+        },
+        select: documentoSelect,
+      });
+      const mudancas: string[] = [];
+      if (dto.status !== undefined) mudancas.push(`Status: ${anterior.status} → ${documento.status}.`);
+      if (dto.parecer !== undefined) mudancas.push(`Parecer: ${anterior.parecer ?? 'não informado'} → ${documento.parecer ?? 'não informado'}.`);
+      await this.registrarHistorico(tx, id, autorId, 'DOCUMENTO_ATUALIZADO',
+        `Documento ${docId} (${anterior.tipoDocumento}): ${mudancas.join(' ')}`, dto.observacao);
+      return this.serializar(documento);
+    });
+  }
+
+  private async transacao<T>(operacao: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    try {
+      return await this.prisma.$transaction(operacao, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        throw new ConflictException('A matrícula foi alterada simultaneamente. Atualize os dados e tente novamente.');
+      }
+      throw error;
+    }
+  }
+
+  private async bloquearMatricula(tx: Prisma.TransactionClient, id: bigint) {
+    const [matricula] = await tx.$queryRaw<{ status: string }[]>`
+      SELECT status FROM matricula WHERE id = ${id} FOR UPDATE
+    `;
+    if (!matricula) throw new NotFoundException('Matrícula não encontrada.');
+    if (!['PENDENTE', 'AGUARDANDO_COORDENADOR'].includes(matricula.status)) {
+      throw new ConflictException('Esta matrícula não permite alterações de documentos.');
+    }
+  }
+
+  private async registrarHistorico(tx: Prisma.TransactionClient, matriculaId: bigint, usuarioId: bigint, resultado: string, descricao: string, observacao?: string) {
+    await tx.matriculaDecisao.create({
+      data: { matriculaId, usuarioId, etapa: 'SECRETARIA', resultado, parecer: observacao ? `${descricao}\n${observacao}` : descricao },
     });
   }
 

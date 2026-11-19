@@ -115,7 +115,7 @@ export class MatriculaService {
         },
         decisoes: {
           where: { etapa: 'SECRETARIA' },
-          select: { id: true, resultado: true, parecer: true, decididoEm: true, usuarioId: true },
+          select: { id: true, resultado: true, parecer: true, decididoEm: true, usuarioId: true, usuario: { select: { nome: true } } },
           orderBy: [{ decididoEm: 'asc' }, { id: 'asc' }],
         },
       },
@@ -153,9 +153,12 @@ export class MatriculaService {
         dataEnvio: documento.dataEnvio,
       })),
       analisesSecretaria: matricula.decisoes.map((decisao) => ({
-        ...decisao,
         id: decisao.id.toString(),
+        resultado: decisao.resultado,
+        parecer: decisao.parecer,
+        decididoEm: decisao.decididoEm,
         usuarioId: decisao.usuarioId.toString(),
+        usuarioNome: decisao.usuario.nome,
       })),
     };
   }

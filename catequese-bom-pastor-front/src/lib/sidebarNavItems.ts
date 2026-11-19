@@ -51,6 +51,7 @@ export const SECRETARIA_NAV_ITEMS: SidebarNavItem[] = [
 
 export const COORDENADOR_NAV_ITEMS: SidebarNavItem[] = [
   { label: "Aprovação de matrículas", to: "/coordenador/matriculas", icon: ClipboardList },
+  { label: "Operações de matrículas", to: "/secretaria/matriculas", icon: FileText },
 ];
 
 export function getDashboardNavItems(isAdminRoute: boolean): SidebarNavItem[] {

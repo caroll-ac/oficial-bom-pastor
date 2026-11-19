@@ -52,7 +52,7 @@ export class MatriculaController {
   }
 
   @Post('matriculas/:id/parecer-secretaria')
-  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA)
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA, USER_ROLES.COORDENADOR)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Registrar parecer da Secretaria sobre a documentação' })
   @ApiResponse({ status: 201, type: ParecerSecretariaResponseDto })
