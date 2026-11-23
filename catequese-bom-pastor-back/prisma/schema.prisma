@@ -57,6 +57,7 @@ model Responsavel {
   parentesco    String?       
   catequizandos Catequizando[]
   matriculas    Matricula[]
+  renovacoes    Renovacao[]
   usuario       Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_responsavel_usuario")
 
   @@map("responsavel")
@@ -153,10 +154,47 @@ model Catequizando {
   frequencias        Frequencia[]
   participacoes      ParticipacaoEvento[]
   sacramentos        Sacramento[]
+  renovacoes         Renovacao[]
 
   @@index([responsavelId], map: "idx_catequizando_responsavel")
   @@index([turmaId], map: "idx_catequizando_turma")
   @@map("catequizando")
+}
+
+model Renovacao {
+  id              BigInt               @id @default(autoincrement())
+  catequizandoId  BigInt               @map("catequizando_id")
+  responsavelId   BigInt               @map("responsavel_id")
+  ano             Int
+  status          String               @default("PENDING")
+  comprovanteKey  String               @map("comprovante_key")
+  observacoes     String?
+  criadoEm        DateTime             @default(now()) @map("criado_em")
+  catequizando    Catequizando         @relation(fields: [catequizandoId], references: [id])
+  responsavel     Responsavel          @relation(fields: [responsavelId], references: [id])
+  documentos      RenovacaoDocumento[]
+
+  @@unique([catequizandoId, ano])
+  @@index([responsavelId])
+  @@map("renovacao")
+}
+
+model RenovacaoConfiguracao {
+  id            Int       @id @default(1)
+  dataLiberacao DateTime? @db.Date @map("data_liberacao")
+
+  @@map("renovacao_configuracao")
+}
+
+model RenovacaoDocumento {
+  id          BigInt    @id @default(autoincrement())
+  renovacaoId BigInt    @map("renovacao_id")
+  tipo        String
+  fileKey     String    @map("file_key")
+  renovacao   Renovacao @relation(fields: [renovacaoId], references: [id], onDelete: Cascade)
+
+  @@unique([renovacaoId, tipo])
+  @@map("renovacao_documento")
 }
 
 model Turma {

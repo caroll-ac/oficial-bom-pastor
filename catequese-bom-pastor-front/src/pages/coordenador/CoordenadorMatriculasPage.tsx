@@ -194,6 +194,7 @@ export default function CoordenadorMatriculasPage() {
         { resultado, parecer: texto },
       );
       if (!response.ok) {
+        const erroResposta: { message?: string } = await response.json().catch(() => ({}));
         if (response.status === 409) {
           setDetalhe(null);
           setTentativaDetalhe((atual) => atual + 1);
@@ -202,17 +203,21 @@ export default function CoordenadorMatriculasPage() {
         toast({
           variant: "destructive",
           title: "Erro ao registrar decisão",
-          description: mensagemErro(response.status, "registrar a decisão"),
+          description: typeof erroResposta.message === "string" ? erroResposta.message : mensagemErro(response.status, "registrar a decisão"),
         });
         return;
       }
-      const dados: { status: string } = await response.json();
+      const dados: { status: string; emailEnviado?: boolean } = await response.json();
       setMatriculas((atuais) => atuais.map((m) => m.protocolo === detalhe.protocolo ? { ...m, status: dados.status } : m));
       setSelecionada((atual) => atual && atual.protocolo === detalhe.protocolo ? { ...atual, status: dados.status } : atual);
       setDetalhe((atual) => atual && atual.protocolo === detalhe.protocolo ? { ...atual, status: dados.status } : atual);
       setResultado("");
       setParecer("");
-      toast({ title: "Decisão registrada", description: `Matrícula ${detalhe.protocolo}: ${statusMatriculaConfig[dados.status]?.label ?? dados.status}.` });
+      toast(dados.emailEnviado === false ? {
+        variant: "destructive",
+        title: "Matrícula aprovada, mas o e-mail não foi enviado",
+        description: "Verifique a configuração de e-mail e use a opção de reenviar.",
+      } : { title: "Decisão registrada", description: `Matrícula ${detalhe.protocolo}: ${statusMatriculaConfig[dados.status]?.label ?? dados.status}.` });
     } catch {
       toast({
         variant: "destructive",
@@ -221,6 +226,22 @@ export default function CoordenadorMatriculasPage() {
       });
     } finally {
       enviandoRef.current = false;
+      setEnviando(false);
+    }
+  };
+
+  const reenviarEmail = async () => {
+    if (!detalhe || enviando) return;
+    setEnviando(true);
+    try {
+      const response = await api.post(`${API_ROUTES.matriculas}/${encodeURIComponent(detalhe.protocolo)}/notificacao-aprovacao`);
+      if (!response.ok) throw new Error("Não foi possível reenviar o e-mail.");
+      const dados: { emailEnviado: boolean } = await response.json();
+      if (!dados.emailEnviado) throw new Error("O e-mail não foi enviado. Verifique a configuração de e-mail.");
+      toast({ title: "E-mail enviado" });
+    } catch (error) {
+      toast({ variant: "destructive", title: "Falha no envio", description: error instanceof Error ? error.message : "Não foi possível reenviar o e-mail." });
+    } finally {
       setEnviando(false);
     }
   };
@@ -379,6 +400,11 @@ export default function CoordenadorMatriculasPage() {
                 )}
               </section>
               <HistoricoAnalisesSecretaria analises={detalhe.analisesSecretaria} />
+              {detalhe.status === "APROVADA" && (
+                <Button type="button" variant="outline" disabled={enviando} onClick={() => void reenviarEmail()}>
+                  {enviando ? "Enviando..." : "Reenviar e-mail de aprovação"}
+                </Button>
+              )}
               <section className="space-y-3 border-t pt-4">
                 <h3 className="font-display font-semibold">Decisão do Coordenador</h3>
                 {!["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) ? (

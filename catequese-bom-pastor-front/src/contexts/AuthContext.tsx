@@ -12,6 +12,7 @@ interface User {
   email: string;
   nome: string;
   role: UserRole;
+  perfis?: string[];
 }
 
 type AuthUserInput = Omit<User, "role"> & {

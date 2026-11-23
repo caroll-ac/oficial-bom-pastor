@@ -26,6 +26,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 // import { NotificacoesModule } from './modules/notificacoes/notificacoes.module';
 import { MatriculaModule } from './modules/matricula/matricula.module';
 import { DocumentoModule } from './modules/documento/documento.module';
+import { RenovacoesModule } from './modules/renovacoes/renovacoes.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { DocumentoModule } from './modules/documento/documento.module';
     AuthModule,
     MatriculaModule,
     DocumentoModule,
+    RenovacoesModule,
     // TurmasModule,
     // CatequizandosModule,
     // ResponsaveisModule,

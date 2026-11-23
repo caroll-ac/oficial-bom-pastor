@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { z } from "zod";
+import { useAuth } from "@/contexts/AuthContext";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { API_ROUTES } from "@/lib/routes";
-import { ADMIN_NAV_ITEMS, PARENT_NAV_ITEMS } from "@/lib/sidebarNavItems";
+import { ADMIN_NAV_ITEMS, COORDENADOR_NAV_ITEMS, PARENT_NAV_ITEMS, SECRETARIA_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { PIX_KEY, PIX_RECIPIENT } from "@/lib/contact";
 
 type DocumentField = "certificadoBatismo" | "comprovanteEndereco" | "certidaoNascimento";
@@ -30,6 +33,25 @@ const documentLabels: Record<string, string> = {
   CERTIDAO_NASCIMENTO: labels.certidaoNascimento,
 };
 const statusLabels: Record<string, string> = { PENDING: "Em análise", APPROVED: "Aprovada", REJECTED: "Não aprovada" };
+const periodoSchema = z.object({ dataLiberacao: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(), aberta: z.boolean() })
+  .refine((periodo) => !periodo.aberta || periodo.dataLiberacao !== null);
+type Periodo = z.infer<typeof periodoSchema>;
+
+const formatarData = (data: string) => data.split("-").reverse().join("/");
+
+async function carregarPeriodo(): Promise<Periodo> {
+  const response = await api.get(API_ROUTES.renovacoesPeriodo);
+  if (!response.ok) throw new Error(await errorMessage(response));
+  const result = periodoSchema.safeParse(await response.json());
+  if (!result.success) throw new Error("O servidor retornou uma configuração de rematrícula inválida.");
+  return result.data;
+}
+
+function mensagemPeriodo(periodo: Periodo) {
+  if (periodo.aberta && periodo.dataLiberacao) return `Rematrícula aberta desde ${formatarData(periodo.dataLiberacao)}.`;
+  if (periodo.dataLiberacao) return `Rematrícula fechada. Abertura prevista para ${formatarData(periodo.dataLiberacao)}.`;
+  return "Rematrícula fechada. A data de abertura ainda não foi definida.";
+}
 
 async function errorMessage(response: Response): Promise<string> {
   const payload = await response.json().catch(() => null);
@@ -49,6 +71,24 @@ export function RenovacaoResponsavel() {
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [periodo, setPeriodo] = useState<Periodo | null>(null);
+  const [erroPeriodo, setErroPeriodo] = useState("");
+  const [carregandoPeriodo, setCarregandoPeriodo] = useState(true);
+
+  const atualizarPeriodo = async () => {
+    try {
+      const resultado = await carregarPeriodo();
+      setPeriodo(resultado);
+      if (!resultado.aberta) setFiles({});
+      setErroPeriodo("");
+    } catch (err) {
+      setPeriodo(null);
+      setFiles({});
+      setErroPeriodo(err instanceof Error ? err.message : "Não foi possível consultar a liberação.");
+    } finally {
+      setCarregandoPeriodo(false);
+    }
+  };
 
   const load = async () => {
     const response = await api.get(`${API_ROUTES.renovacoes}/me`);
@@ -60,6 +100,9 @@ export function RenovacaoResponsavel() {
   useEffect(() => {
     load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Não foi possível carregar os dados."))
       .finally(() => setLoading(false));
+    void atualizarPeriodo();
+    const timer = window.setInterval(() => { void atualizarPeriodo(); }, 60000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const child = children.find((item) => item.id === childId);
@@ -67,6 +110,10 @@ export function RenovacaoResponsavel() {
     event.preventDefault();
     setError("");
     setNotice("");
+    if (!periodo?.aberta) {
+      setError("A rematrícula ainda não está liberada.");
+      return;
+    }
     if (!child || !files.comprovantePix || child.documentosFaltantes.some((field) => !files[field])) {
       setError("Selecione o catequizando e anexe o comprovante e os documentos pendentes.");
       return;
@@ -81,7 +128,10 @@ export function RenovacaoResponsavel() {
     setSubmitting(true);
     try {
       const response = await api.post(API_ROUTES.renovacoes, form);
-      if (!response.ok) throw new Error(await errorMessage(response));
+      if (!response.ok) {
+        if (response.status === 403) await atualizarPeriodo();
+        throw new Error(await errorMessage(response));
+      }
       setFiles({});
       setFormKey((value) => value + 1);
       setNotice("Solicitação enviada. A coordenação analisará o comprovante e os documentos.");
@@ -104,9 +154,11 @@ export function RenovacaoResponsavel() {
     </div>
   );
   return (
-    <DashboardShell items={PARENT_NAV_ITEMS} title="Renovação" description="Solicite a renovação para análise da coordenação.">
-      <Card><CardHeader><CardTitle>Solicitar renovação</CardTitle></CardHeader><CardContent className="space-y-4">
-        <p>Taxa de renovação: <strong>R$ 50,00 via Pix</strong>. Chave celular: <strong>{PIX_KEY}</strong>. Beneficiário: {PIX_RECIPIENT}. Anexe o comprovante; a renovação não é automática.</p>
+    <DashboardShell items={PARENT_NAV_ITEMS} title="Rematrícula" description="Solicite a rematrícula de uma criança cadastrada para análise da coordenação.">
+      <Card><CardHeader><CardTitle>Solicitar rematrícula</CardTitle></CardHeader><CardContent className="space-y-4">
+        {carregandoPeriodo ? <p>Consultando liberação...</p> : erroPeriodo ? <p role="alert" className="text-destructive">{erroPeriodo}</p> : periodo && <p role="status">{mensagemPeriodo(periodo)}</p>}
+        {periodo?.aberta && <>
+        <p>Taxa de rematrícula: <strong>R$ 50,00 via Pix</strong>. Chave celular: <strong>{PIX_KEY}</strong>. Beneficiário: {PIX_RECIPIENT}. Anexe o comprovante; a rematrícula não é automática.</p>
         <p className="text-sm text-muted-foreground">PDF, JPG, PNG ou WEBP, até 5 MB por arquivo. Documentos já enviados não precisam ser reenviados, mas podem ser substituídos.</p>
         {loading ? <p>Carregando...</p> : children.length === 0 ? !error && <p>Nenhum catequizando cadastrado foi encontrado. Entre em contato com a coordenação.</p> : (
           <form key={formKey} onSubmit={submit} className="space-y-4">
@@ -116,7 +168,7 @@ export function RenovacaoResponsavel() {
                 <option value="">Selecione</option>{children.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}
               </select>
             </div>
-            <div className="space-y-2"><Label htmlFor="year">Ano da renovação</Label>
+            <div className="space-y-2"><Label htmlFor="year">Ano da rematrícula</Label>
               <select id="year" className="flex h-10 w-full rounded-md border bg-background px-3" value={year} onChange={(event) => setYear(event.target.value)}>
                 {[new Date().getFullYear() + 1, new Date().getFullYear()].map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
@@ -126,6 +178,7 @@ export function RenovacaoResponsavel() {
             <Button type="submit" disabled={submitting}>{submitting ? "Enviando..." : "Enviar solicitação"}</Button>
           </form>
         )}
+        </>}
         {notice && <p role="status" className="text-green-700">{notice}</p>}
         {error && <p role="alert" className="text-destructive">{error}</p>}
       </CardContent></Card>
@@ -142,7 +195,74 @@ export function RenovacaoResponsavel() {
   );
 }
 
+function ConfiguracaoPeriodo({ podeEditar }: { podeEditar: boolean }) {
+  const [periodo, setPeriodo] = useState<Periodo | null>(null);
+  const [data, setData] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    carregarPeriodo().then((result) => {
+      setPeriodo(result);
+      setData(result.dataLiberacao ?? "");
+    }).catch((err: unknown) => setError(err instanceof Error ? err.message : "Não foi possível consultar a liberação."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const alterar = async (fechar: boolean) => {
+    setError("");
+    setNotice("");
+    if (!fechar && !data) {
+      setError("Informe a data de abertura.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = fechar
+        ? await api.delete(API_ROUTES.renovacoesPeriodo)
+        : await api.put(API_ROUTES.renovacoesPeriodo, { dataLiberacao: data });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const result = periodoSchema.safeParse(await response.json());
+      if (!result.success) throw new Error("O servidor retornou uma configuração inválida. Atualize a página.");
+      setPeriodo(result.data);
+      setData(result.data.dataLiberacao ?? "");
+      setNotice(fechar ? "Rematrícula fechada." : "Data de abertura salva.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível alterar a liberação.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <Card><CardHeader><CardTitle>Liberação da rematrícula</CardTitle></CardHeader>
+    <CardContent className="space-y-4">
+      {loading ? <p>Carregando...</p> : periodo && <p role="status">{mensagemPeriodo(periodo)}</p>}
+      <p className="text-sm text-muted-foreground">A abertura ocorre à meia-noite no horário de Brasília. A data vale para todas as rematrículas.</p>
+      {podeEditar && !loading && periodo && <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void alterar(false); }}>
+        <div className="space-y-2"><Label htmlFor="data-liberacao">Data de abertura</Label>
+          <Input id="data-liberacao" type="date" value={data} onChange={(event) => setData(event.target.value)} required />
+        </div>
+        <div className="flex flex-wrap gap-2"><Button type="submit" disabled={busy}>Salvar data</Button>
+          {periodo.dataLiberacao && <Button type="button" variant="outline" disabled={busy} onClick={() => void alterar(true)}>Limpar data e fechar</Button>}
+        </div>
+      </form>}
+      {notice && <p role="status" className="text-green-700">{notice}</p>}
+      {error && <p role="alert" className="text-destructive">{error}</p>}
+    </CardContent>
+  </Card>;
+}
+
+export function RenovacaoSecretaria() {
+  return <DashboardShell items={SECRETARIA_NAV_ITEMS} title="Liberação de rematrícula" description="Consulte a data definida pela administração.">
+    <ConfiguracaoPeriodo podeEditar={false} />
+  </DashboardShell>;
+}
+
 export function RenovacaoAdmin() {
+  const { pathname } = useLocation();
+  const { role, user } = useAuth();
   const [records, setRecords] = useState<AdminRenewal[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -182,10 +302,11 @@ export function RenovacaoAdmin() {
     }
   };
   return (
-    <DashboardShell items={ADMIN_NAV_ITEMS} title="Renovações" description="Confira o Pix e os documentos antes de decidir.">
+    <DashboardShell items={pathname.startsWith("/coordenador") ? COORDENADOR_NAV_ITEMS : ADMIN_NAV_ITEMS} title="Rematrículas" description="Confira o Pix e os documentos antes de decidir.">
+      <ConfiguracaoPeriodo podeEditar={role === "admin" || Boolean(user?.perfis?.includes("ADMINISTRADOR"))} />
       {error && <p role="alert" className="text-destructive">{error}</p>}
       {notice && <p role="status" className="text-green-700">{notice}</p>}
-      {loading ? <p>Carregando...</p> : records.length === 0 ? !error && <p>Nenhuma solicitação de renovação.</p> : records.map((item) => (
+      {loading ? <p>Carregando...</p> : records.length === 0 ? !error && <p>Nenhuma solicitação de rematrícula.</p> : records.map((item) => (
         <Card key={item.id}><CardHeader><CardTitle>{item.catequizando.nome} — {item.ano}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p>Responsável: {item.responsavel.nome} — {item.responsavel.email} {item.responsavel.telefone && `— ${item.responsavel.telefone}`}</p>

@@ -126,12 +126,12 @@ export class AuthService {
     return this.getMe(userId);
   }
 
-  async sendPasswordSetupInvite(usuarioId: bigint) {
+  async sendPasswordSetupInvite(usuarioId: bigint, matriculaAprovada = false) {
     const usuario = await this.prisma.usuario.findUnique({ where: { id: usuarioId } });
     if (!usuario || usuario.ativo !== true || !usuario.primeiroAcesso) {
       throw new BadRequestException('Usuário indisponível para primeiro acesso.');
     }
-    return this.sendPasswordSetupEmail(usuario, TipoPasswordSetup.PRIMEIRO_ACESSO, true);
+    return this.sendPasswordSetupEmail(usuario, TipoPasswordSetup.PRIMEIRO_ACESSO, true, matriculaAprovada);
   }
 
   async validatePasswordSetupToken(token: string) {
@@ -226,6 +226,7 @@ export class AuthService {
     usuario: { id: bigint; email: string; nome: string },
     tipo: TipoPasswordSetup,
     requireDelivery: boolean,
+    matriculaAprovada = false,
   ) {
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -241,12 +242,13 @@ export class AuthService {
       setupUrl.searchParams.set('token', rawToken);
       const isReset = tipo === TipoPasswordSetup.RESET_SENHA;
       const action = isReset ? 'redefinir sua senha' : 'criar sua senha de acesso';
-      const text = `Olá, ${usuario.nome}.\n\nUse o link abaixo para ${action}:\n${setupUrl}\n\nO link expira em 24 horas e só pode ser usado uma vez. Se você não solicitou esta ação, ignore esta mensagem.`;
+      const approval = matriculaAprovada ? 'A coordenação aprovou a matrícula. ' : '';
+      const text = `Olá, ${usuario.nome}.\n\n${approval}Use o link abaixo para ${action}:\n${setupUrl}\n\nO link expira em 24 horas e só pode ser usado uma vez. Se você não solicitou esta ação, ignore esta mensagem.`;
       const delivery = await this.mailerService.sendMail({
         to: [usuario.email],
-        subject: isReset ? 'Redefina sua senha | Catequese Bom Pastor' : 'Crie sua senha de acesso | Catequese Bom Pastor',
+        subject: isReset ? 'Redefina sua senha | Catequese Bom Pastor' : matriculaAprovada ? 'Matrícula aprovada | Catequese Bom Pastor' : 'Crie sua senha de acesso | Catequese Bom Pastor',
         text,
-        html: `<p>Olá, ${this.escapeHtml(usuario.nome)}.</p><p>Use o link abaixo para ${action}:</p><p><a href="${this.escapeHtml(setupUrl.toString())}">Definir senha</a></p><p>O link expira em 24 horas e só pode ser usado uma vez.</p>`,
+        html: `<p>Olá, ${this.escapeHtml(usuario.nome)}.</p><p>${approval}Use o link abaixo para ${action}:</p><p><a href="${this.escapeHtml(setupUrl.toString())}">Definir senha</a></p><p>O link expira em 24 horas e só pode ser usado uma vez.</p>`,
       }, { requireDelivery });
       if (delivery?.skipped) {
         this.logger.warn('E-mail de definição de senha não enviado: SMTP não configurado.');

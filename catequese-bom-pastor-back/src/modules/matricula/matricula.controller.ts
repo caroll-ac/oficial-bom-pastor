@@ -83,6 +83,14 @@ export class MatriculaController {
     return this.matriculaService.registrarDecisaoCoordenador(id, usuarioId, dto);
   }
 
+  @Post('matriculas/:id/notificacao-aprovacao')
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.COORDENADOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reenviar e-mail de aprovação de matrícula' })
+  notificarAprovacao(@Param('id') id: string) {
+    return this.matriculaService.enviarNotificacaoAprovacao(id);
+  }
+
   @Post('matriculas')
   @Public()
   @ApiOperation({ summary: 'Enviar matrícula' })

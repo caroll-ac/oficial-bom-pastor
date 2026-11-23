@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import AdminDashboard from "@/pages/legacy/AdminDashboard";
 import AddCatequizando from "@/pages/legacy/AddCatequizando";
 import Cronograma from "@/pages/catequista/Cronograma";
@@ -14,12 +14,12 @@ import Material from "@/pages/catequista/Material";
 import MinhasTurmas from "@/pages/catequista/MinhasTurmas";
 import Musicas from "@/pages/legacy/Musicas";
 import NotFound from "@/pages/public/NotFound";
-import ParentDashboard from "@/pages/responsavel/ParentDashboard";
+import { MeusCatequizandos } from "@/pages/public/AreaResponsavel";
+import { RenovacaoAdmin, RenovacaoResponsavel, RenovacaoSecretaria } from "@/pages/public/Renovacao";
 import ParentDocumentos from "@/pages/responsavel/ParentDocumentos";
 import ParentCronograma from "@/pages/responsavel/ParentCronograma";
 import ParentGaleria from "@/pages/responsavel/ParentGaleria";
 import AdminInscricoesCatequistas from "@/pages/legacy/AdminInscricoesCatequistas";
-import PreMatriculaCrianca from "@/pages/public/PreMatriculaCrianca";
 import PrimeiroAcesso from "@/pages/public/PrimeiroAcesso";
 import Sobre from "@/pages/public/Sobre";
 import ProtectedRoute from "@/components/auth/protectedRoute";
@@ -43,24 +43,28 @@ const AppRoutes = () => (
               <Route path="/inscricao/sucesso" element={<MatriculaSucessoPage />} />
               <Route path="/matricula" element={<MatriculaPage />} />
               <Route path="/criar-senha" element={<PrimeiroAcesso />} />
-              <Route path="/pre-matricula" element={<PreMatriculaCrianca />} />
+              <Route path="/pre-matricula" element={<Navigate to="/matricula" replace />} />
               <Route element={<ProtectedRoute />} >
                 <Route path="/perfil" element={<MeuPerfil />} />
 
                 {/* Rotas Secretaria (sem autorização por perfil ainda) */}
                 <Route path="/secretaria/matriculas" element={<SecretariaMatriculasPage />} />
+                <Route path="/secretaria/renovacoes" element={<RenovacaoSecretaria />} />
 
                 {/* Rotas Coordenador (sem autorização por perfil ainda) */}
                 <Route path="/coordenador/matriculas" element={<CoordenadorMatriculasPage />} />
+                <Route path="/coordenador/renovacoes" element={<RenovacaoAdmin />} />
 
                 {/* Rotas Pais */}
-                <Route path="/pais" element={<ParentDashboard />} />
+                <Route path="/pais" element={<MeusCatequizandos />} />
+                <Route path="/pais/renovacao" element={<RenovacaoResponsavel />} />
                 <Route path="/pais/documentos" element={<ParentDocumentos />} />
                 <Route path="/pais/cronograma" element={<ParentCronograma />} />
                 <Route path="/pais/galeria" element={<ParentGaleria />} />
 
                 {/* Rotas Admin */}
                 <Route path="/admin" element={<AdminOverview />} />
+                <Route path="/admin/renovacoes" element={<RenovacaoAdmin />} />
                 <Route path="/admin/turmas" element={<AdminDashboard />} />
                 <Route
                   path="/admin/add-catequizando"

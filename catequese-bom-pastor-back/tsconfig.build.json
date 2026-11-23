@@ -11,7 +11,8 @@
     "src/common/**/*.ts",
     "src/modules/auth/**/*.ts",
     "src/modules/matricula/**/*.ts",
-    "src/modules/documento/**/*.ts"
+    "src/modules/documento/**/*.ts",
+    "src/modules/renovacoes/**/*.ts"
   ],
   "exclude": [
     "node_modules",

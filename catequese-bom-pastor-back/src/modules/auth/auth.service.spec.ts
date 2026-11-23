@@ -162,6 +162,18 @@ describe('AuthService', () => {
     expect(mailer.sendMail.mock.calls[1][0].text).toContain('/criar-senha?token=');
   });
 
+  it('informa a aprovação no convite de primeiro acesso', async () => {
+    const usuario = { ...makeUser(), primeiroAcesso: true };
+    prisma.usuario.findUnique.mockResolvedValue(usuario);
+    prisma.passwordSetupToken.create.mockResolvedValue({ id: 1n });
+    mailer.sendMail.mockResolvedValue({});
+    await service.sendPasswordSetupInvite(usuario.id, true);
+    expect(mailer.sendMail).toHaveBeenCalledWith(expect.objectContaining({
+      subject: expect.stringContaining('Matrícula aprovada'),
+      text: expect.stringContaining('A coordenação aprovou a matrícula.'),
+    }), { requireDelivery: true });
+  });
+
   it('rejeita explicitamente atualização de foto', async () => {
     await expect(service.updateMyProfile('1', { removerFoto: true })).rejects.toBeInstanceOf(BadRequestException);
   });
