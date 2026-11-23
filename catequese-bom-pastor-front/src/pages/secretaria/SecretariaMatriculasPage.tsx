@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { HistoricoAnalisesSecretaria, type AnaliseSecretaria } from "@/components/matriculas/HistoricoAnalisesSecretaria";
+import { OperacoesDocumentos } from "@/components/matriculas/OperacoesDocumentos";
 import { MatriculaStatusBadge } from "@/components/matriculas/MatriculaStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,11 +14,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { statusMatriculaConfig } from "@/lib/matriculaStatus";
 import { API_ROUTES } from "@/lib/routes";
-import { SECRETARIA_NAV_ITEMS } from "@/lib/sidebarNavItems";
+import { COORDENADOR_NAV_ITEMS, SECRETARIA_NAV_ITEMS } from "@/lib/sidebarNavItems";
 import { cn } from "@/lib/utils";
 
 // Espelha MatriculaResponseDto do backend (GET /api/matriculas).
@@ -76,6 +79,7 @@ const PARECER_MAX = 1000;
 const resultadosAnalise = [
   { valor: "DOCUMENTACAO_OK", label: "Documentação OK" },
   { valor: "PENDENCIA_DOCUMENTAL", label: "Pendência documental" },
+  { valor: "OBSERVACAO", label: "Observação" },
 ];
 
 const formatarData = (iso: string | null) => {
@@ -93,16 +97,20 @@ const Dado = ({ label, valor }: { label: string; valor: string }) => (
 );
 
 export default function SecretariaMatriculasPage() {
+  const { role } = useAuth();
+  const location = useLocation();
+  const podeOperar = role === "secretaria" || role === "coordenador" || role === "admin";
   const [matriculas, setMatriculas] = useState<MatriculaResponse[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(() => new URLSearchParams(location.search).get("protocolo") ?? "");
   const [filtroStatus, setFiltroStatus] = useState(TODOS);
   const [selecionada, setSelecionada] = useState<MatriculaResponse | null>(null);
   const [detalhe, setDetalhe] = useState<MatriculaDetalheResponse | null>(null);
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false);
   const [erroDetalhe, setErroDetalhe] = useState<string | null>(null);
   const protocoloAtual = useRef<string | null>(null);
+  const navegacaoProcessada = useRef<string | null>(null);
   const [resultado, setResultado] = useState("");
   const [parecer, setParecer] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -126,11 +134,21 @@ export default function SecretariaMatriculasPage() {
         throw new Error(mensagens[response.status] ?? "Não foi possível carregar os detalhes da matrícula.");
       }
       const dados: MatriculaDetalheResponse = await response.json();
-      if (protocoloAtual.current === protocolo) setDetalhe(dados);
+      if (protocoloAtual.current === protocolo) {
+        setDetalhe(dados);
+        setMatriculas((atuais) => atuais.map((matricula) => matricula.protocolo === protocolo ? {
+          ...matricula,
+          status: dados.status,
+          responsavel: dados.responsavel,
+          catequizando: dados.catequizando,
+          etapa: dados.etapa,
+          dataSolicitacao: dados.dataSolicitacao,
+        } : matricula));
+      }
     } catch (e) {
       if (protocoloAtual.current === protocolo) {
         const mensagem = e instanceof Error ? e.message : "Não foi possível carregar os detalhes da matrícula.";
-        setErroDetalhe(aposRegistro ? `O parecer foi registrado, mas o histórico não pôde ser atualizado. ${mensagem}` : mensagem);
+        setErroDetalhe(aposRegistro ? `A operação foi registrada, mas os detalhes não puderam ser atualizados. ${mensagem}` : mensagem);
       }
     } finally {
       if (protocoloAtual.current === protocolo) setCarregandoDetalhe(false);
@@ -156,7 +174,7 @@ export default function SecretariaMatriculasPage() {
   };
 
   const registrarParecer = async () => {
-    if (!selecionada || !detalhe || !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) || enviandoRef.current || erroDetalhe) return;
+    if (!podeOperar || !selecionada || !detalhe || !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) || enviandoRef.current || erroDetalhe) return;
     const protocolo = selecionada.protocolo;
     const texto = parecer.trim();
 
@@ -233,6 +251,23 @@ export default function SecretariaMatriculasPage() {
     carregar();
   }, [carregar]);
 
+  useEffect(() => {
+    const protocolo = new URLSearchParams(location.search).get("protocolo");
+    if (!protocolo || carregando || erro || navegacaoProcessada.current === location.key) return;
+    navegacaoProcessada.current = location.key;
+    setBusca(protocolo);
+    const matricula = matriculas.find((item) => item.protocolo === protocolo);
+    if (!matricula) {
+      toast({ title: "Matrícula não encontrada", description: `Não foi encontrada a matrícula ${protocolo}.`, variant: "destructive" });
+      return;
+    }
+    setSelecionada(matricula);
+    setResultado("");
+    setParecer("");
+    setErroForm(null);
+    void carregarDetalhe(protocolo);
+  }, [carregando, erro, matriculas, location.key, location.search, carregarDetalhe, toast]);
+
   const filtradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     return matriculas.filter((m) => {
@@ -253,8 +288,8 @@ export default function SecretariaMatriculasPage() {
 
   return (
     <DashboardShell
-      items={SECRETARIA_NAV_ITEMS}
-      title="Área da Secretaria"
+      items={role === "coordenador" ? COORDENADOR_NAV_ITEMS : SECRETARIA_NAV_ITEMS}
+      title={role === "coordenador" ? "Operações de matrículas" : "Área da Secretaria"}
       description="Acompanhe matrículas e registre análises documentais. A decisão final é responsabilidade do Coordenador."
     >
           {!carregando && !erro && (
@@ -432,12 +467,25 @@ export default function SecretariaMatriculasPage() {
 
                   <HistoricoAnalisesSecretaria analises={detalhe.analisesSecretaria} />
 
+                  {podeOperar && ["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) && (
+                    <OperacoesDocumentos
+                      key={detalhe.protocolo}
+                      protocolo={detalhe.protocolo}
+                      documentos={detalhe.documentos}
+                      disabled={enviando || carregandoDetalhe || !!erroDetalhe}
+                      aoSalvar={() => carregarDetalhe(detalhe.protocolo, true)}
+                      aoEnviarChange={(valor) => { enviandoRef.current = valor; setEnviando(valor); }}
+                    />
+                  )}
+
                   <section className="space-y-3 border-t pt-4">
-                    <h3 className="font-display font-semibold">Análise da Secretaria</h3>
+                    <h3 className="font-display font-semibold">Análise ou observação da Secretaria</h3>
                     <p className="text-sm text-muted-foreground">
                       A análise não altera o status da matrícula. A decisão final é responsabilidade do Coordenador.
                     </p>
-                    {!["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) ? (
+                    {!podeOperar ? (
+                      <p className="text-sm text-muted-foreground">Você não tem permissão para registrar análises.</p>
+                    ) : !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) ? (
                       <p className="text-sm text-muted-foreground">
                         Esta matrícula não permite mais análises documentais.
                       </p>
@@ -471,7 +519,7 @@ export default function SecretariaMatriculasPage() {
                             maxLength={PARECER_MAX}
                             rows={4}
                             disabled={enviando}
-                            placeholder="Descreva o resultado da análise documental"
+                            placeholder="Descreva a análise ou observação"
                           />
                           <p className="text-right text-xs text-muted-foreground">
                             {parecer.length}/{PARECER_MAX} (mínimo {PARECER_MIN})
@@ -479,11 +527,16 @@ export default function SecretariaMatriculasPage() {
                         </div>
                         {erroForm && <p role="alert" className="text-sm text-destructive">{erroForm}</p>}
                         <Button type="submit" disabled={enviando || carregandoDetalhe || !!erroDetalhe} className="w-full sm:w-auto">
-                          {enviando ? "Registrando..." : "Registrar parecer"}
+                          {enviando ? "Registrando..." : "Registrar análise ou observação"}
                         </Button>
                       </form>
                     )}
                   </section>
+                  {(role === "coordenador" || role === "admin") && !enviando && (
+                    <Button variant="outline" asChild>
+                      <Link to={`/coordenador/matriculas?protocolo=${encodeURIComponent(detalhe.protocolo)}`}>Voltar à decisão</Link>
+                    </Button>
+                  )}
                 </>
               )}
             </>

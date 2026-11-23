@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { FileText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { DashboardShell } from "@/components/layout/DashboardShell";
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { statusMatriculaConfig } from "@/lib/matriculaStatus";
@@ -98,6 +100,9 @@ function mensagemErro(status: number, acao: string) {
 
 export default function CoordenadorMatriculasPage() {
   const { toast } = useToast();
+  const { role } = useAuth();
+  const location = useLocation();
+  const podeDecidir = role === "coordenador" || role === "admin";
   const [matriculas, setMatriculas] = useState<MatriculaResponse[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -111,8 +116,9 @@ export default function CoordenadorMatriculasPage() {
   const [erroForm, setErroForm] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const enviandoRef = useRef(false);
+  const navegacaoProcessada = useRef<string | null>(null);
   const [filtroStatus, setFiltroStatus] = useState("TODOS");
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(() => new URLSearchParams(location.search).get("protocolo") ?? "");
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -132,6 +138,23 @@ export default function CoordenadorMatriculasPage() {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  useEffect(() => {
+    const protocolo = new URLSearchParams(location.search).get("protocolo");
+    if (!protocolo || carregando || erro || navegacaoProcessada.current === location.key) return;
+    navegacaoProcessada.current = location.key;
+    setBusca(protocolo);
+    const matricula = matriculas.find((item) => item.protocolo === protocolo);
+    if (!matricula) {
+      toast({ title: "Matrícula não encontrada", description: `Não foi encontrada a matrícula ${protocolo}.`, variant: "destructive" });
+      return;
+    }
+    setResultado("");
+    setParecer("");
+    setErroForm(null);
+    setDetalhe(null);
+    setSelecionada(matricula);
+  }, [carregando, erro, matriculas, location.key, location.search, toast]);
 
   const protocolo = selecionada?.protocolo;
   useEffect(() => {
@@ -175,7 +198,7 @@ export default function CoordenadorMatriculasPage() {
   };
 
   const registrarDecisao = async () => {
-    if (!detalhe || !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) || enviandoRef.current) return;
+    if (!podeDecidir || !detalhe || !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) || enviandoRef.current) return;
     const texto = parecer.trim();
     if (!resultado) {
       setErroForm("Selecione o resultado da decisão.");
@@ -400,6 +423,9 @@ export default function CoordenadorMatriculasPage() {
                 )}
               </section>
               <HistoricoAnalisesSecretaria analises={detalhe.analisesSecretaria} />
+              {podeDecidir && !enviando && ["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) && (
+                <Button variant="outline" asChild>
+                  <Link to={`/secretaria/matriculas?protocolo=${encodeURIComponent(detalhe.protocolo)}`}>Operações e observações desta matrícula</Link>
               {detalhe.status === "APROVADA" && (
                 <Button type="button" variant="outline" disabled={enviando} onClick={() => void reenviarEmail()}>
                   {enviando ? "Enviando..." : "Reenviar e-mail de aprovação"}
@@ -407,7 +433,9 @@ export default function CoordenadorMatriculasPage() {
               )}
               <section className="space-y-3 border-t pt-4">
                 <h3 className="font-display font-semibold">Decisão do Coordenador</h3>
-                {!["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) ? (
+                {!podeDecidir ? (
+                  <p className="text-sm text-muted-foreground">Você não tem permissão para registrar uma decisão.</p>
+                ) : !["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) ? (
                   <p className="text-sm text-muted-foreground">Esta matrícula não permite mais uma decisão do Coordenador.</p>
                 ) : (
                   <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void registrarDecisao(); }}>

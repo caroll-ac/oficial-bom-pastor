@@ -242,6 +242,7 @@ describe('Matrícula MVP', () => {
           parecer: 'Falta comprovante.',
           decididoEm: new Date('2026-02-04T09:00:00.000Z'),
           usuarioId: 9007199254740999n,
+          usuario: { nome: 'Maria Oliveira' },
         },
         {
           id: 9007199254741000n,
@@ -249,6 +250,7 @@ describe('Matrícula MVP', () => {
           parecer: 'Documentação conferida.',
           decididoEm: new Date('2026-02-05T09:00:00.000Z'),
           usuarioId: 7n,
+          usuario: { nome: 'Ana Costa' },
         },
       ],
     };
@@ -336,6 +338,7 @@ describe('Matrícula MVP', () => {
               parecer: 'Falta comprovante.',
               decididoEm: '2026-02-04T09:00:00.000Z',
               usuarioId: '9007199254740999',
+              usuarioNome: 'Maria Oliveira',
             },
             {
               id: '9007199254741000',
@@ -343,6 +346,7 @@ describe('Matrícula MVP', () => {
               parecer: 'Documentação conferida.',
               decididoEm: '2026-02-05T09:00:00.000Z',
               usuarioId: '7',
+              usuarioNome: 'Ana Costa',
             },
           ],
         });
@@ -366,7 +370,7 @@ describe('Matrícula MVP', () => {
       expect(args.select.etapa).toEqual({ select: { id: true, nome: true } });
       expect(args.select.decisoes).toEqual({
         where: { etapa: 'SECRETARIA' },
-        select: { id: true, resultado: true, parecer: true, decididoEm: true, usuarioId: true },
+        select: { id: true, resultado: true, parecer: true, decididoEm: true, usuarioId: true, usuario: { select: { nome: true } } },
         orderBy: [{ decididoEm: 'asc' }, { id: 'asc' }],
       });
       for (const campo of ['observacao', 'dataAprovacao', 'responsavelId', 'responsavel', 'catequizando']) {
@@ -402,10 +406,10 @@ describe('Matrícula MVP', () => {
     const enviar = (perfil: UserRole, body: unknown, rota = url) =>
       request(app.getHttpServer()).post(rota).set('Authorization', auth([perfil], '7')).send(body as object);
 
-    it('exige autenticação e restringe a Administrador e Secretaria', async () => {
+    it('exige autenticação e restringe a equipe operacional', async () => {
       await request(app.getHttpServer()).post(url).send(corpo).expect(401);
       await enviar(USER_ROLES.RESPONSAVEL, corpo).expect(403);
-      await enviar(USER_ROLES.COORDENADOR, corpo).expect(403);
+      await enviar(USER_ROLES.CATEQUISTA, corpo).expect(403);
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -444,6 +448,9 @@ describe('Matrícula MVP', () => {
       [USER_ROLES.SECRETARIA, 'PENDENTE', 'PENDENCIA_DOCUMENTAL'],
       [USER_ROLES.SECRETARIA, 'AGUARDANDO_COORDENADOR', 'DOCUMENTACAO_OK'],
       [USER_ROLES.ADMINISTRADOR, 'AGUARDANDO_COORDENADOR', 'PENDENCIA_DOCUMENTAL'],
+      [USER_ROLES.SECRETARIA, 'PENDENTE', 'OBSERVACAO'],
+      [USER_ROLES.COORDENADOR, 'PENDENTE', 'OBSERVACAO'],
+      [USER_ROLES.COORDENADOR, 'AGUARDANDO_COORDENADOR', 'DOCUMENTACAO_OK'],
     ])(
       'registra análise para %s, mantendo %s com resultado %s',
       async (perfil, status, resultado) => {

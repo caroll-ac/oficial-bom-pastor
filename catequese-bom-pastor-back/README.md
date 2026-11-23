@@ -211,11 +211,15 @@ A resposta contém `id` como string, `status` e `dataSolicitacao`. Os três tipo
 
 ### Documentos da matrícula
 
-- `POST /api/matriculas/:id/documentos`: registra metadados adicionais; exclusivo para `SECRETARIA`, `COORDENADOR` ou `ADMINISTRADOR`.
+- `POST /api/matriculas/:id/documentos`: registra metadados adicionais (`nomeArquivo`, `tipoDocumento` e `observacao` opcional).
+- `PUT /api/matriculas/:id/documentos/:documentoId/substituicao`: substitui o nome do arquivo (`nomeArquivo` e `observacao` opcional), reiniciando o status do documento para `PENDENTE` e limpando seu parecer.
+- `PATCH /api/matriculas/:id/documentos/:documentoId`: altera `status` (`PENDENTE`, `APROVADO` ou `REJEITADO`) e/ou `parecer` (texto vazio o remove), com `observacao` opcional.
 - `GET /api/matriculas/:id/documentos` e `GET /api/matriculas/:id/documentos/:documentoId`: equipe ou responsável autenticado vinculado a uma matrícula aprovada.
 - `GET /api/matriculas/minhas`: lista as matrículas aprovadas vinculadas ao responsável autenticado.
 
-As rotas acima exigem JWT. Não existe consulta pública de documentos nem envio físico posterior. A criação de matrículas agora exige o array `documentos`, portanto clientes do contrato anterior precisam ser atualizados.
+As operações de escrita exigem JWT de `SECRETARIA`, `COORDENADOR` ou `ADMINISTRADOR` e matrícula em `PENDENTE` ou `AGUARDANDO_COORDENADOR`. Cada operação grava uma entrada no histórico da Secretaria, retornado em `analisesSecretaria` por `GET /api/matriculas/:id`, sem alterar o status da matrícula. Não existe consulta pública de documentos nem envio físico posterior.
+
+`POST /api/matriculas/:id/parecer-secretaria` aceita os mesmos perfis e também aceita `resultado: "OBSERVACAO"` e um `parecer` para registrar observações gerais sem classificar a documentação. A decisão final permanece restrita a `COORDENADOR` e `ADMINISTRADOR`.
 
 ### Turmas
 - CRUD de turmas

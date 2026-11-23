@@ -36,6 +36,9 @@ export class AnaliseSecretariaResponseDto {
 
   @ApiProperty({ example: '1' })
   usuarioId: string;
+
+  @ApiProperty({ example: 'Maria Oliveira' })
+  usuarioNome: string;
 }
 
 export class MatriculaDetalheResponseDto extends MatriculaResponseDto {
