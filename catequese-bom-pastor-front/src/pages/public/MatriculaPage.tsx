@@ -261,7 +261,7 @@ export default function MatriculaPage() {
           <div className="mb-8 text-center">
             <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-primary">Catequese Bom Pastor</p>
             <h1 className="font-display text-3xl font-bold md:text-4xl">Matrícula na Catequese</h1>
-            <p className="mt-3 text-muted-foreground">Preencha as informações em quatro etapas.</p>
+            <p className="mt-3 text-muted-foreground">Para matricular uma criança, preencha as informações em quatro etapas. Para rematricular uma criança já cadastrada, <Link to="/login" className="text-primary underline">entre na área dos pais</Link>.</p>
           </div>
           <div className="mb-6 rounded-lg border border-gold/40 bg-gold-light/30 p-4 text-sm" role="note">
             A matrícula e os nomes dos documentos serão registrados. Os arquivos não serão enviados nem armazenados; consulte a secretaria sobre a entrega dos documentos.

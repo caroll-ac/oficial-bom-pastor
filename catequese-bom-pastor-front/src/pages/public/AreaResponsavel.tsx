@@ -28,7 +28,7 @@ export function MeusCatequizandos() {
     {loading ? <p>Carregando...</p> : !error && children.length === 0 ? <p>Nenhum catequizando cadastrado. Entre em contato com a coordenação.</p> :
       children.map((child) => <Card key={child.id}><CardHeader><CardTitle>{child.nome}</CardTitle></CardHeader>
         <CardContent>Turma: {child.turma || "Ainda não alocado"}</CardContent></Card>)}
-    <Button asChild><Link to="/pais/renovacao">Solicitar ou acompanhar renovação</Link></Button>
+    <Button asChild><Link to="/pais/renovacao">Solicitar ou acompanhar rematrícula</Link></Button>
   </DashboardShell>;
 }
 

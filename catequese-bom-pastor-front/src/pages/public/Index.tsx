@@ -208,13 +208,13 @@ export default function Index() {
               </Button>
               <Button variant="heroOutline" size="lg" asChild>
                 <Link to="/login">
-                  Área do Catequista
+                  Acessar minha conta
                   <ChevronRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
             </div>
             <p className="mt-5 text-sm text-primary-foreground/90">
-              Conheça o Sistema de Gestão Catequética e o <Link to="/matricula" className="font-semibold underline underline-offset-4">formulário de matrícula (demonstração)</Link>.
+              Para rematricular uma criança já cadastrada, <Link to="/login" className="font-semibold underline underline-offset-4">acesse a área dos pais</Link>. Para uma nova criança, use a matrícula.
             </p>
           </div>
         </div>

@@ -104,7 +104,18 @@ Após iniciar o servidor, acesse:
 
 ## 🔐 Autenticação
 
-A API usa `Usuario`, `UsuarioPerfil` e `Perfil` para autenticação e autorização. A criação de usuários e a emissão de convites de primeiro acesso dependem da adaptação dos módulos que criam usuários; não há endpoint de registro no Auth.
+A API usa `Usuario`, `UsuarioPerfil` e `Perfil` para autenticação e autorização. Não há endpoint público de registro no Auth: a aprovação de matrícula cria a conta do responsável quando necessário.
+
+### Matrícula e rematrícula
+
+- A matrícula é pública em `/matricula`. Após aprovação pela coordenação, o responsável e o catequizando são vinculados à matrícula. O perfil `RESPONSAVEL` deve existir no banco.
+- Para uma conta já existente, o CPF informado deve corresponder ao cadastro do responsável. Em caso de divergência, a coordenação deve conferir os dados antes de aprovar. O e-mail de aprovação orienta o acesso com a conta existente; novos responsáveis recebem convite para criar senha.
+- O resultado da aprovação inclui `emailEnviado`. Caso seja `false`, a decisão continua registrada e a coordenação pode reenviar pelo painel ou por `POST /api/matriculas/:id/notificacao-aprovacao`. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` e `FRONTEND_URL`.
+- A rematrícula é feita após login, em `/pais/renovacao`, para um catequizando já vinculado ao responsável. Ela exige comprovante Pix e documentos faltantes, e é analisada pela coordenação. A matrícula pública registra somente nomes de arquivos, portanto eles ainda precisam ser enviados na primeira rematrícula.
+- O administrador define ou limpa a data de abertura em `/admin/renovacoes`; a secretaria consulta em `/secretaria/renovacoes`. Sem data, o envio fica fechado. A partir da meia-noite da data configurada no horário de Brasília, o envio é liberado para todas as rematrículas até a data ser alterada ou removida. As solicitações anteriores continuam visíveis.
+- `GET /api/renovacoes/periodo` consulta a configuração; `PUT /api/renovacoes/periodo` com `{ "dataLiberacao": "AAAA-MM-DD" }` e `DELETE /api/renovacoes/periodo` são restritos ao administrador. O bloqueio é aplicado no servidor, inclusive se a configuração mudar durante o envio.
+- Os arquivos de rematrícula exigem storage S3 configurado com bucket privado (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` e, quando aplicável, `S3_ENDPOINT`/`S3_PUBLIC_ENDPOINT`). A coordenação recebe links assinados temporários.
+- Aplique as migrações com `npm run prisma:deploy` e regenere o cliente Prisma antes de executar a versão atualizada.
 
 ### Login
 

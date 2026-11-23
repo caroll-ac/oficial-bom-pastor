@@ -28,4 +28,7 @@ export class DecisaoCoordenadorResponseDto {
 
   @ApiProperty({ type: DecisaoMatriculaResponseDto })
   decisao: DecisaoMatriculaResponseDto;
+
+  @ApiProperty({ required: false, description: 'Indica se o e-mail de aprovação foi enviado.' })
+  emailEnviado?: boolean;
 }

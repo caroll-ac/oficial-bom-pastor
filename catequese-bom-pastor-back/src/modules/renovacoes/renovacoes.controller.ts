@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -27,6 +27,13 @@ class DecisaoDto {
   observacoes?: string;
 }
 
+class PeriodoDto {
+  @IsString()
+  @Matches(/^[1-9]\d{3}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
+  dataLiberacao: string;
+}
+
 @Controller('renovacoes')
 export class RenovacoesController {
   constructor(private readonly service: RenovacoesService) {}
@@ -37,8 +44,26 @@ export class RenovacoesController {
     return this.service.mine(userId);
   }
 
-  @Get()
+  @Get('periodo')
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.SECRETARIA, USER_ROLES.COORDENADOR, USER_ROLES.RESPONSAVEL)
+  periodo() {
+    return this.service.periodo();
+  }
+
+  @Put('periodo')
   @Roles(USER_ROLES.ADMINISTRADOR)
+  definirPeriodo(@Body() dto: PeriodoDto) {
+    return this.service.definirPeriodo(dto.dataLiberacao);
+  }
+
+  @Delete('periodo')
+  @Roles(USER_ROLES.ADMINISTRADOR)
+  fecharPeriodo() {
+    return this.service.fecharPeriodo();
+  }
+
+  @Get()
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.COORDENADOR)
   list() {
     return this.service.list();
   }
@@ -56,7 +81,7 @@ export class RenovacoesController {
   }
 
   @Patch(':id')
-  @Roles(USER_ROLES.ADMINISTRADOR)
+  @Roles(USER_ROLES.ADMINISTRADOR, USER_ROLES.COORDENADOR)
   decide(@Param('id') id: string, @Body() dto: DecisaoDto) {
     return this.service.decide(id, dto.status, dto.observacoes);
   }

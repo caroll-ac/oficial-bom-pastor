@@ -11,17 +11,24 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { MatriculaModule } from './matricula.module';
+import { AuthService } from '../auth/auth.service';
+import { MailerService } from '../../common/mailer/mailer.service';
 
 describe('Matrícula MVP', () => {
   let app: INestApplication;
   const jwt = new JwtService();
   const prisma = {
     etapaCatequetica: { findMany: jest.fn(), findFirst: jest.fn() },
-    matricula: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
+    matricula: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
     matriculaDecisao: { create: jest.fn() },
+    usuario: { findMany: jest.fn(), create: jest.fn() },
+    perfil: { findUnique: jest.fn() },
+    catequizando: { findFirst: jest.fn(), create: jest.fn() },
     $queryRaw: jest.fn(),
     $transaction: jest.fn(),
   };
+  const mailer = { sendMail: jest.fn() };
+  const authService = { sendPasswordSetupInvite: jest.fn() };
   const token = (perfis: UserRole[], id = '42') => jwt.sign(
     { sub: id, email: 'user@example.com', perfis, tokenUse: 'access' },
     { secret: 'test-secret' },
@@ -57,7 +64,12 @@ describe('Matrícula MVP', () => {
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
-    }).overrideProvider(PrismaService).useValue(prisma).compile();
+    })
+      .overrideProvider(PrismaService).useValue(prisma)
+      .overrideProvider(AuthService).useValue(authService)
+      .overrideProvider(MailerService).useValue(mailer)
+      .overrideProvider(ConfigService).useValue({ get: (key: string) => key === 'FRONTEND_URL' ? 'http://localhost:5173' : 'test-secret' })
+      .compile();
     app = module.createNestApplication();
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({
@@ -77,6 +89,21 @@ describe('Matrícula MVP', () => {
     prisma.matricula.create.mockResolvedValue({
       id: 9007199254740995n, status: 'PENDENTE', dataSolicitacao: new Date('2026-01-01T00:00:00Z'),
     });
+    prisma.matricula.findUniqueOrThrow.mockResolvedValue({
+      responsavelEmail: 'maria@example.com', responsavelCpf: '123.456.789-00',
+      catequizandoNome: 'Ana Silva', catequizandoDataNascimento: new Date('2015-03-20'),
+      catequizandoEndereco: 'Rua Exemplo', catequizandoTelefoneEmergencia: '11999999999',
+    });
+    prisma.usuario.findMany.mockResolvedValue([{
+      id: 8n, ativo: true, responsavel: { id: 9n, cpf: '12345678900' },
+      perfis: [{ perfil: { nome: 'RESPONSAVEL' } }],
+    }]);
+    prisma.matricula.findUnique.mockResolvedValue({
+      status: 'APROVADA', catequizandoNome: 'Ana Silva',
+      responsavel: { usuario: { id: 8n, ativo: true, primeiroAcesso: false, nome: 'Maria', email: 'maria@example.com' } },
+    });
+    prisma.catequizando.findFirst.mockResolvedValue(null);
+    mailer.sendMail.mockResolvedValue({});
   });
 
   afterAll(async () => {
@@ -479,8 +506,6 @@ describe('Matrícula MVP', () => {
     const url = '/api/matriculas/9007199254740995/decisao-coordenador';
     const corpo = { resultado: 'APROVADA', parecer: 'Aprovada conforme análise.' };
     const decididoEm = new Date('2026-02-05T09:00:00.000Z');
-    const modelosForaDoEscopo = ['usuario', 'responsavel', 'catequizando', 'passwordSetupToken'];
-
     beforeEach(() => {
       prisma.matricula.updateMany.mockResolvedValue({ count: 1 });
       prisma.matriculaDecisao.create.mockImplementation(async ({ data }) => ({
@@ -545,6 +570,7 @@ describe('Matrícula MVP', () => {
         expect(response.body).toEqual({
           protocolo: '9007199254740995',
           status: 'APROVADA',
+          emailEnviado: true,
           decisao: {
             id: '9007199254740999',
             etapa: 'COORDENADOR',
@@ -606,14 +632,71 @@ describe('Matrícula MVP', () => {
         where: { id: 9007199254740995n, status: { in: ['PENDENTE', 'AGUARDANDO_COORDENADOR'] } },
         data: { status: 'REJEITADA', dataAprovacao: null },
       });
+      expect(prisma.usuario.findMany).not.toHaveBeenCalled();
+      expect(mailer.sendMail).not.toHaveBeenCalled();
     });
 
-    it('não acessa Usuario, Responsavel, Catequizando nem PasswordSetupToken', async () => {
+    it('vincula outro filho ao responsável existente e envia somente orientação de login', async () => {
       await enviar(USER_ROLES.COORDENADOR, corpo).expect(201);
-      for (const modelo of modelosForaDoEscopo) {
-        expect(prisma).not.toHaveProperty(modelo);
-      }
+      expect(prisma.usuario.create).not.toHaveBeenCalled();
+      expect(prisma.matricula.update).toHaveBeenCalledWith({
+        where: { id: 9007199254740995n }, data: { responsavelId: 9n },
+      });
+      expect(prisma.catequizando.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ responsavelId: 9n, matriculaId: 9007199254740995n, nome: 'Ana Silva' }),
+      }));
+      expect(authService.sendPasswordSetupInvite).not.toHaveBeenCalled();
+      expect(mailer.sendMail).toHaveBeenCalledWith(expect.objectContaining({
+        to: ['maria@example.com'], text: expect.stringMatching(/coordenação aprovou[\s\S]*\/login/),
+      }), { requireDelivery: true });
     });
+
+    it('cria conta e envia convite de primeiro acesso para um novo responsável', async () => {
+      prisma.usuario.findMany.mockResolvedValue([]);
+      prisma.perfil.findUnique.mockResolvedValue({ id: 2n });
+      prisma.usuario.create.mockResolvedValue({ responsavel: { id: 10n } });
+      prisma.matricula.findUniqueOrThrow.mockResolvedValue({
+        responsavelEmail: 'Maria@Example.com', responsavelNome: 'Maria', responsavelCpf: '12345678900',
+        responsavelTelefone: '11999999999', responsavelParentesco: 'Mãe', catequizandoNome: 'Ana Silva',
+        catequizandoDataNascimento: new Date('2015-03-20'), catequizandoEndereco: 'Rua Exemplo',
+        catequizandoTelefoneEmergencia: '11999999999',
+      });
+      prisma.matricula.findUnique.mockResolvedValue({
+        status: 'APROVADA', responsavel: { usuario: { id: 11n, ativo: true, primeiroAcesso: true } },
+      });
+      authService.sendPasswordSetupInvite.mockResolvedValue({ emailSent: true });
+      await enviar(USER_ROLES.COORDENADOR, corpo).expect(201);
+      expect(prisma.usuario.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ email: 'Maria@Example.com', primeiroAcesso: true }),
+      }));
+      expect(authService.sendPasswordSetupInvite).toHaveBeenCalledWith(11n, true);
+      expect(mailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    it('recusa vínculo quando o CPF não corresponde à conta existente', async () => {
+      prisma.usuario.findMany.mockResolvedValue([{
+        ativo: true, responsavel: { id: 9n, cpf: '99999999999' },
+        perfis: [{ perfil: { nome: 'RESPONSAVEL' } }],
+      }]);
+      await enviar(USER_ROLES.COORDENADOR, corpo).expect(409);
+      expect(prisma.catequizando.create).not.toHaveBeenCalled();
+      expect(mailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    it('informa falha de e-mail sem desfazer a aprovação', async () => {
+      mailer.sendMail.mockRejectedValue(new Error('SMTP indisponível'));
+      const response = await enviar(USER_ROLES.COORDENADOR, corpo).expect(201);
+      expect(response.body).toMatchObject({ status: 'APROVADA', emailEnviado: false });
+    });
+
+    it('permite apenas à coordenação ou administração reenviar a aprovação', async () => {
+      const rota = '/api/matriculas/9007199254740995/notificacao-aprovacao';
+      await request(app.getHttpServer()).post(rota).set('Authorization', auth([USER_ROLES.RESPONSAVEL])).expect(403);
+      const response = await request(app.getHttpServer()).post(rota)
+        .set('Authorization', auth([USER_ROLES.COORDENADOR])).expect(201);
+      expect(response.body).toEqual({ emailEnviado: true });
+    });
+
   });
 
   it('cria matrícula pendente com todos os dados e responde sem expor dados pessoais', async () => {

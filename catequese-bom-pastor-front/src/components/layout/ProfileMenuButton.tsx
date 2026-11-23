@@ -48,7 +48,7 @@ export function ProfileMenuButton() {
     };
   }, [isAuthenticated, location.pathname, user?.id, user?.nome]);
 
-  const isPrivateRoute = /^\/(perfil|pais|admin|catequista|secretaria|coordenador|comunicacao)(\/|$)/.test(location.pathname);
+  const isPrivateRoute = /^\/(perfil|pais|admin|catequista|secretaria|coordenador)(\/|$)/.test(location.pathname);
   if (!isAuthenticated || !isPrivateRoute) return null;
 
   const displayName = profile?.nome || user?.nome || "Meu perfil";

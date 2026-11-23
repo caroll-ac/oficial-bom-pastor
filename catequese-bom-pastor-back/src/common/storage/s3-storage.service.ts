@@ -167,6 +167,15 @@ export class S3StorageService {
   return this.buildFileUrl(key);
 }
 
+  async getPrivateFileUrl(key: string): Promise<string> {
+    this.ensureS3Config();
+    return getSignedUrl(
+      this.publicClient ?? this.client,
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      { expiresIn: 60 * 15 },
+    );
+  }
+
 async getStoredFileUrl(location: string): Promise<string> {
   let key = location;
 
