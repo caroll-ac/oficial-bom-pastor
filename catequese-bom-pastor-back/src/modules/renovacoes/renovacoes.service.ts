@@ -3,8 +3,16 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { S3StorageService } from '../../common/storage/s3-storage.service';
 
-type Upload = { buffer: Buffer; mimetype: string };
-export type RenewalFiles = Partial<Record<'comprovantePix' | 'certificadoBatismo' | 'comprovanteEndereco' | 'certidaoNascimento', Upload[]>>;
+export type RenewalUpload = { buffer: Buffer; mimetype: string };
+export type RenewalFiles = Partial<Record<'comprovantePix' | 'certificadoBatismo' | 'comprovanteEndereco' | 'certidaoNascimento', RenewalUpload[]>>;
+type RenewalDocumentType = (typeof DOCUMENTS)[number]['tipo'];
+type RenewalOperation = 'DOCUMENTO_ADICIONADO' | 'DOCUMENTO_SUBSTITUIDO' | 'OBSERVACAO' | 'REENVIO' | 'DECISAO';
+
+type LockedRenewal = {
+  status: string;
+  observacoes: string | null;
+  comprovanteKey: string;
+};
 
 const DOCUMENTS = [
   { field: 'certificadoBatismo', tipo: 'CERTIFICADO_BATISMO' },
@@ -58,6 +66,50 @@ export class RenovacoesService {
       throw new BadRequestException('Identificador inválido.');
     }
     return BigInt(value);
+  }
+
+  private validateUpload(file: RenewalUpload | undefined): RenewalUpload {
+    if (!file || !file.buffer.length || file.buffer.length > 5 * 1024 * 1024 ||
+        !ALLOWED_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException('Envie um arquivo PDF, JPG, PNG ou WEBP de até 5 MB.');
+    }
+    return file;
+  }
+
+  private async lockPendingRenewal(tx: Prisma.TransactionClient, id: bigint): Promise<LockedRenewal> {
+    const [renewal] = await tx.$queryRaw<LockedRenewal[]>`
+      SELECT status, observacoes, comprovante_key AS "comprovanteKey"
+      FROM renovacao
+      WHERE id = ${id}
+      FOR UPDATE
+    `;
+    if (!renewal) throw new NotFoundException('Rematrícula não encontrada.');
+    if (renewal.status !== 'PENDING') {
+      throw new ConflictException('Somente rematrículas PENDING permitem operações.');
+    }
+    return renewal;
+  }
+
+  private historyEntry(operation: RenewalOperation, userId: string, detail: string) {
+    return `[${new Date().toISOString()}] ${operation} (usuário ${userId}): ${detail}`;
+  }
+
+  private appendObservation(current: string | null, entry: string) {
+    return current?.trim() ? `${current}\n${entry}` : entry;
+  }
+
+  private async recordOperation(
+    tx: Prisma.TransactionClient,
+    id: bigint,
+    current: string | null,
+    userId: string,
+    operation: RenewalOperation,
+    detail: string,
+  ) {
+    await tx.renovacao.update({
+      where: { id },
+      data: { observacoes: this.appendObservation(current, this.historyEntry(operation, userId, detail)) },
+    });
   }
 
   private async children(userId: string) {
@@ -128,6 +180,84 @@ export class RenovacoesService {
     }));
   }
 
+  async addDocument(idParam: string, userId: string, tipo: RenewalDocumentType, input?: RenewalUpload) {
+    const id = this.parseId(idParam);
+    if (!DOCUMENTS.some((document) => document.tipo === tipo)) {
+      throw new BadRequestException('Tipo de documento inválido.');
+    }
+    const file = this.validateUpload(input);
+    const uploaded = await this.storage.uploadBufferDocument(file.buffer, file.mimetype, 'renovacoes', tipo.toLowerCase());
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const renewal = await this.lockPendingRenewal(tx, id);
+        const existing = await tx.renovacaoDocumento.findUnique({
+          where: { renovacaoId_tipo: { renovacaoId: id, tipo } },
+          select: { id: true },
+        });
+        if (existing) throw new ConflictException('Este tipo de documento já existe nesta rematrícula. Substitua-o.');
+        await tx.renovacaoDocumento.create({ data: { renovacaoId: id, tipo, fileKey: uploaded.key } });
+        await this.recordOperation(tx, id, renewal.observacoes, userId, 'DOCUMENTO_ADICIONADO', tipo);
+      });
+    } catch (error) {
+      await this.cleanup([uploaded.key]);
+      throw error;
+    }
+    return { status: 'PENDING', tipo };
+  }
+
+  async replaceDocument(idParam: string, userId: string, tipoParam: string, input?: RenewalUpload) {
+    const id = this.parseId(idParam);
+    const file = this.validateUpload(input);
+    const isPix = tipoParam === 'COMPROVANTE_PIX';
+    const tipo = tipoParam as RenewalDocumentType;
+    if (!isPix && !DOCUMENTS.some((document) => document.tipo === tipoParam)) {
+      throw new BadRequestException('Tipo de documento inválido.');
+    }
+
+    const uploaded = await this.storage.uploadBufferDocument(file.buffer, file.mimetype, 'renovacoes', tipoParam.toLowerCase());
+    let replacedKey: string | null = null;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const renewal = await this.lockPendingRenewal(tx, id);
+        if (isPix) {
+          replacedKey = renewal.comprovanteKey;
+          await tx.renovacao.update({
+            where: { id },
+            data: { comprovanteKey: uploaded.key },
+          });
+        } else {
+          const existing = await tx.renovacaoDocumento.findUnique({
+            where: { renovacaoId_tipo: { renovacaoId: id, tipo } },
+            select: { fileKey: true },
+          });
+          replacedKey = existing?.fileKey ?? null;
+          await tx.renovacaoDocumento.upsert({
+            where: { renovacaoId_tipo: { renovacaoId: id, tipo } },
+            create: { renovacaoId: id, tipo, fileKey: uploaded.key },
+            update: { fileKey: uploaded.key },
+          });
+        }
+        await this.recordOperation(tx, id, renewal.observacoes, userId, 'DOCUMENTO_SUBSTITUIDO', tipoParam);
+      });
+    } catch (error) {
+      await this.cleanup([uploaded.key]);
+      throw error;
+    }
+    if (replacedKey) await this.cleanup([replacedKey]);
+    return { status: 'PENDING', tipo: tipoParam };
+  }
+
+  async registerObservation(idParam: string, userId: string, observation: string) {
+    const id = this.parseId(idParam);
+    const text = observation.trim();
+    if (!text || text.length > 1000) throw new BadRequestException('A observação deve ter entre 1 e 1000 caracteres.');
+    return this.prisma.$transaction(async (tx) => {
+      const renewal = await this.lockPendingRenewal(tx, id);
+      await this.recordOperation(tx, id, renewal.observacoes, userId, 'OBSERVACAO', text);
+      return { status: 'PENDING' };
+    });
+  }
+
   async create(userId: string, childId: string, ano: number, files: RenewalFiles = {}) {
     if (!(await this.periodo()).aberta) {
       throw new ForbiddenException('A rematrícula ainda não está liberada.');
@@ -181,7 +311,15 @@ export class RenovacoesService {
         if (prior) {
           const updated = await tx.renovacao.updateMany({
             where: { id: prior.id, status: 'REJECTED' },
-            data: { status: 'PENDING', comprovanteKey, observacoes: null, criadoEm: new Date() },
+            data: {
+              status: 'PENDING',
+              comprovanteKey,
+              observacoes: this.appendObservation(
+                prior.observacoes,
+                this.historyEntry('REENVIO', userId, 'Solicitação reenviada pelo responsável.'),
+              ),
+              criadoEm: new Date(),
+            },
           });
           if (!updated.count) throw new ConflictException('A solicitação já foi atualizada.');
           await tx.renovacaoDocumento.deleteMany({ where: { renovacaoId: prior.id } });
@@ -204,14 +342,24 @@ export class RenovacoesService {
     return { id: result.id.toString(), status: result.status };
   }
 
-  async decide(id: string, status: 'APPROVED' | 'REJECTED', observacoes?: string) {
+  async decide(id: string, status: 'APPROVED' | 'REJECTED', observacoes: string | undefined, userId: string) {
     if (status === 'REJECTED' && !observacoes?.trim()) throw new BadRequestException('Informe o motivo da recusa.');
-    const result = await this.prisma.renovacao.updateMany({
-      where: { id: this.parseId(id), status: 'PENDING' },
-      data: { status, observacoes: observacoes?.trim() || null },
+    const renewalId = this.parseId(id);
+    return this.prisma.$transaction(async (tx) => {
+      const renewal = await this.lockPendingRenewal(tx, renewalId);
+      const decision = observacoes?.trim() || `Decisão registrada: ${status}.`;
+      await tx.renovacao.update({
+        where: { id: renewalId },
+        data: {
+          status,
+          observacoes: this.appendObservation(
+            renewal.observacoes,
+            this.historyEntry('DECISAO', userId, `${status}: ${decision}`),
+          ),
+        },
+      });
+      return { status };
     });
-    if (!result.count) throw new ConflictException('Solicitação inexistente ou já analisada.');
-    return { status };
   }
 
   private async cleanup(keys: string[]) {

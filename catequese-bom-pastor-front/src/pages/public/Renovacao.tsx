@@ -22,6 +22,12 @@ type AdminRenewal = Renewal & {
   comprovanteUrl: string;
   documentos: { tipo: string; url: string | null }[];
 };
+type RenewalStoredDocumentType = "CERTIFICADO_BATISMO" | "COMPROVANTE_ENDERECO" | "CERTIDAO_NASCIMENTO";
+type RenewalDocumentType = RenewalStoredDocumentType | "COMPROVANTE_PIX";
+type RenewalDocumentOperation = "adicionar" | "substituir" | "observacao";
+const renewalStoredDocumentTypes: RenewalStoredDocumentType[] = [
+  "CERTIFICADO_BATISMO", "COMPROVANTE_ENDERECO", "CERTIDAO_NASCIMENTO",
+];
 const labels: Record<DocumentField, string> = {
   certificadoBatismo: "Certificado de batismo",
   comprovanteEndereco: "Comprovante de endereço",
@@ -32,7 +38,7 @@ const documentLabels: Record<string, string> = {
   COMPROVANTE_ENDERECO: labels.comprovanteEndereco,
   CERTIDAO_NASCIMENTO: labels.certidaoNascimento,
 };
-const statusLabels: Record<string, string> = { PENDING: "Em análise", APPROVED: "Aprovada", REJECTED: "Não aprovada" };
+const statusLabels: Record<string, string> = { PENDING: "Aguardando decisão", APPROVED: "Aprovada", REJECTED: "Rejeitada" };
 const periodoSchema = z.object({ dataLiberacao: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(), aberta: z.boolean() })
   .refine((periodo) => !periodo.aberta || periodo.dataLiberacao !== null);
 type Periodo = z.infer<typeof periodoSchema>;
@@ -255,14 +261,122 @@ function ConfiguracaoPeriodo({ podeEditar }: { podeEditar: boolean }) {
 }
 
 export function RenovacaoSecretaria() {
-  return <DashboardShell items={SECRETARIA_NAV_ITEMS} title="Liberação de rematrícula" description="Consulte a data definida pela administração.">
+  return <DashboardShell items={SECRETARIA_NAV_ITEMS} title="Área de Rematrículas" description="Consulte solicitações, documentos e registre operações sem alterar a decisão.">
     <ConfiguracaoPeriodo podeEditar={false} />
+    <ListaRenovacoes podeOperar podeDecidir={false} />
   </DashboardShell>;
 }
 
-export function RenovacaoAdmin() {
-  const { pathname } = useLocation();
-  const { role, user } = useAuth();
+function OperacoesRematricula({ renovacao, aoSalvar }: {
+  renovacao: AdminRenewal;
+  aoSalvar: () => Promise<void>;
+}) {
+  const [operacao, setOperacao] = useState<RenewalDocumentOperation>("adicionar");
+  const [tipo, setTipo] = useState<RenewalDocumentType>("CERTIFICADO_BATISMO");
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [observacao, setObservacao] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const tiposAdicionar = renewalStoredDocumentTypes.filter(
+    (documentType) => !renovacao.documentos.some((documento) => documento.tipo === documentType && documento.url),
+  );
+  const tiposSubstituir: RenewalDocumentType[] = ["COMPROVANTE_PIX", "CERTIFICADO_BATISMO", "COMPROVANTE_ENDERECO", "CERTIDAO_NASCIMENTO"];
+
+  const salvar = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    if (operacao === "observacao" && !observacao.trim()) {
+      setError("Informe a observação.");
+      return;
+    }
+    if (operacao !== "observacao" && !arquivo) {
+      setError("Selecione o arquivo.");
+      return;
+    }
+    setBusy(true);
+    try {
+      let response: Response;
+      if (operacao === "observacao") {
+        response = await api.post(`${API_ROUTES.renovacoes}/${renovacao.id}/observacoes`, { observacao: observacao.trim() });
+      } else {
+        const form = new FormData();
+        if (!arquivo) return;
+        form.append("documento", arquivo);
+        if (operacao === "adicionar") {
+          form.append("tipo", tipo);
+          response = await api.post(`${API_ROUTES.renovacoes}/${renovacao.id}/documentos`, form);
+        } else {
+          response = await api.put(
+            `${API_ROUTES.renovacoes}/${renovacao.id}/documentos/${encodeURIComponent(tipo)}`,
+            form,
+          );
+        }
+      }
+      if (!response.ok) throw new Error(await errorMessage(response));
+      setArquivo(null);
+      setObservacao("");
+      setNotice("Operação registrada; o status da rematrícula permanece PENDING.");
+      await aoSalvar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível registrar a operação.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <section className="space-y-3 border-t pt-4">
+    <h3 className="font-semibold">Operações da Secretaria</h3>
+    <p className="text-sm text-muted-foreground">As operações não alteram o status nem aprovam ou rejeitam a rematrícula.</p>
+    <form className="space-y-3" onSubmit={(event) => void salvar(event)}>
+      <div className="space-y-2">
+        <Label htmlFor={`operacao-${renovacao.id}`}>Operação</Label>
+        <select id={`operacao-${renovacao.id}`} className="flex h-10 w-full rounded-md border bg-background px-3"
+          value={operacao} onChange={(event) => {
+            const next = event.target.value as RenewalDocumentOperation;
+            setOperacao(next);
+            if (next === "adicionar") setTipo(tiposAdicionar[0] ?? "CERTIFICADO_BATISMO");
+            if (next === "substituir" && tipo !== "COMPROVANTE_PIX" && !tiposSubstituir.includes(tipo)) setTipo("COMPROVANTE_PIX");
+          }} disabled={busy}>
+          <option value="adicionar">Adicionar documento</option>
+          <option value="substituir">Substituir documento</option>
+          <option value="observacao">Registrar observação</option>
+        </select>
+      </div>
+      {operacao !== "observacao" ? <>
+        <div className="space-y-2">
+          <Label htmlFor={`tipo-${renovacao.id}`}>Tipo de documento</Label>
+          <select id={`tipo-${renovacao.id}`} className="flex h-10 w-full rounded-md border bg-background px-3"
+            value={tipo} onChange={(event) => setTipo(event.target.value as RenewalDocumentType)} disabled={busy}>
+            {(operacao === "adicionar" ? tiposAdicionar : tiposSubstituir).map((documentType) => (
+              <option key={documentType} value={documentType}>
+                {documentType === "COMPROVANTE_PIX" ? "Comprovante do Pix" : documentLabels[documentType]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`arquivo-${renovacao.id}`}>Arquivo (PDF, JPG, PNG ou WEBP; até 5 MB)</Label>
+          <Input id={`arquivo-${renovacao.id}`} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onChange={(event) => setArquivo(event.target.files?.[0] ?? null)} disabled={busy} />
+        </div>
+      </> : <div className="space-y-2">
+        <Label htmlFor={`observacao-${renovacao.id}`}>Observação</Label>
+        <Textarea id={`observacao-${renovacao.id}`} value={observacao} maxLength={1000}
+          onChange={(event) => setObservacao(event.target.value)} disabled={busy} />
+      </div>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {notice && <p role="status" className="text-sm text-green-700">{notice}</p>}
+      <Button type="submit" disabled={busy || (operacao === "adicionar" && tiposAdicionar.length === 0)}>
+        {busy ? "Registrando..." : "Registrar operação"}
+      </Button>
+    </form>
+  </section>;
+}
+
+function ListaRenovacoes({ podeOperar, podeDecidir }: { podeOperar: boolean; podeDecidir: boolean }) {
   const [records, setRecords] = useState<AdminRenewal[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -302,8 +416,7 @@ export function RenovacaoAdmin() {
     }
   };
   return (
-    <DashboardShell items={pathname.startsWith("/coordenador") ? COORDENADOR_NAV_ITEMS : ADMIN_NAV_ITEMS} title="Rematrículas" description="Confira o Pix e os documentos antes de decidir.">
-      <ConfiguracaoPeriodo podeEditar={role === "admin" || Boolean(user?.perfis?.includes("ADMINISTRADOR"))} />
+    <>
       {error && <p role="alert" className="text-destructive">{error}</p>}
       {notice && <p role="status" className="text-green-700">{notice}</p>}
       {loading ? <p>Carregando...</p> : records.length === 0 ? !error && <p>Nenhuma solicitação de rematrícula.</p> : records.map((item) => (
@@ -311,17 +424,41 @@ export function RenovacaoAdmin() {
           <CardContent className="space-y-3">
             <p>Responsável: {item.responsavel.nome} — {item.responsavel.email} {item.responsavel.telefone && `— ${item.responsavel.telefone}`}</p>
             <p>Status: {statusLabels[item.status] || item.status}</p>
-            <a className="block text-primary underline" href={item.comprovanteUrl} target="_blank" rel="noopener noreferrer">Abrir comprovante do Pix</a>
-            {item.documentos.map((doc) => doc.url ? <a key={doc.tipo} className="block text-primary underline" href={doc.url} target="_blank" rel="noopener noreferrer">{documentLabels[doc.tipo]}</a> : <p key={doc.tipo}>{documentLabels[doc.tipo]}: não enviado</p>)}
-            {item.status === "PENDING" ? <>
+            {item.comprovanteUrl
+              ? <a className="block text-primary underline" href={item.comprovanteUrl} target="_blank" rel="noopener noreferrer">Abrir comprovante do Pix</a>
+              : <p>Comprovante do Pix: não enviado</p>}
+            {item.documentos.map((doc) => doc.url
+              ? <a key={doc.tipo} className="block text-primary underline" href={doc.url} target="_blank" rel="noopener noreferrer">{documentLabels[doc.tipo]}</a>
+              : <p key={doc.tipo}>{documentLabels[doc.tipo]}: não enviado</p>)}
+            {item.observacoes && <div className="space-y-1">
+              <h3 className="font-medium">Observações e histórico</h3>
+              <p className="whitespace-pre-wrap break-words text-sm">{item.observacoes}</p>
+            </div>}
+            {podeOperar && item.status === "PENDING" && <OperacoesRematricula renovacao={item} aoSalvar={load} />}
+            {podeDecidir && item.status === "PENDING" ? <>
               <Label htmlFor={`notes-${item.id}`}>Observações (obrigatórias para recusar)</Label>
               <Textarea id={`notes-${item.id}`} value={notes[item.id] || ""} onChange={(event) => setNotes((prev) => ({ ...prev, [item.id]: event.target.value }))} />
               <div className="flex gap-2"><Button disabled={busy !== null} onClick={() => decide(item.id, "APPROVED")}>Aprovar</Button>
                 <Button variant="destructive" disabled={busy !== null} onClick={() => decide(item.id, "REJECTED")}>Recusar</Button></div>
-            </> : item.observacoes && <p>Observações: {item.observacoes}</p>}
+            </> : null}
           </CardContent>
         </Card>
       ))}
+    </>
+  );
+}
+
+export function RenovacaoAdmin() {
+  const { pathname } = useLocation();
+  const { role, user } = useAuth();
+  const perfis = user?.perfis ?? [];
+  const isAdmin = role === "admin" || perfis.includes("ADMINISTRADOR");
+  const isCoordinator = role === "coordenador" || perfis.includes("COORDENADOR");
+  const podeOperar = isAdmin || isCoordinator;
+  return (
+    <DashboardShell items={pathname.startsWith("/coordenador") ? COORDENADOR_NAV_ITEMS : ADMIN_NAV_ITEMS} title="Rematrículas" description="Consulte documentos, registre operações e decida solicitações pendentes.">
+      <ConfiguracaoPeriodo podeEditar={isAdmin} />
+      <ListaRenovacoes podeOperar={podeOperar} podeDecidir={podeOperar} />
     </DashboardShell>
   );
 }

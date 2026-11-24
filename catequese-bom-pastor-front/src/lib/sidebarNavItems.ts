@@ -44,7 +44,7 @@ export const PARENT_NAV_ITEMS: SidebarNavItem[] = [
 
 export const SECRETARIA_NAV_ITEMS: SidebarNavItem[] = [
   { label: "Análise de matrículas", to: "/secretaria/matriculas", icon: ClipboardList },
-  { label: "Liberação de rematrícula", to: "/secretaria/renovacoes", icon: Calendar },
+  { label: "Área de rematrículas", to: "/secretaria/renovacoes", icon: Calendar },
 ];
 
 export const COORDENADOR_NAV_ITEMS: SidebarNavItem[] = [

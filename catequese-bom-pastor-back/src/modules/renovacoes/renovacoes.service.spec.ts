@@ -14,12 +14,16 @@ import { RenovacoesService, RenewalFiles } from './renovacoes.service';
 
 describe('Rematrícula', () => {
   let service: RenovacoesService;
+  let serviceApp: INestApplication;
   const prisma = {
     catequizando: { findMany: jest.fn() },
     responsavel: { findUnique: jest.fn() },
-    renovacao: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
+    renovacao: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     renovacaoConfiguracao: { findUnique: jest.fn(), upsert: jest.fn() },
-    renovacaoDocumento: { deleteMany: jest.fn(), createMany: jest.fn(), findMany: jest.fn() },
+    renovacaoDocumento: {
+      deleteMany: jest.fn(), createMany: jest.fn(), findMany: jest.fn(),
+      findUnique: jest.fn(), create: jest.fn(), upsert: jest.fn(),
+    },
     $queryRaw: jest.fn(),
     $transaction: jest.fn(),
   };
@@ -38,14 +42,18 @@ describe('Rematrícula', () => {
         { provide: S3StorageService, useValue: storage },
       ],
     }).compile();
-    service = module.get(RenovacoesService);
+    serviceApp = module.createNestApplication();
+    service = serviceApp.get(RenovacoesService);
   });
+
+  afterAll(async () => { await serviceApp.close(); });
 
   describe('Permissões de rematrícula', () => {
     let app: INestApplication;
     const service = {
       mine: jest.fn(), list: jest.fn(), periodo: jest.fn(),
       definirPeriodo: jest.fn(), fecharPeriodo: jest.fn(),
+      addDocument: jest.fn(), replaceDocument: jest.fn(), registerObservation: jest.fn(), decide: jest.fn(),
     };
     const jwt = new JwtService();
     const token = (perfil: string) => `Bearer ${jwt.sign(
@@ -77,6 +85,10 @@ describe('Rematrícula', () => {
       service.periodo.mockResolvedValue({ dataLiberacao: null, aberta: false });
       service.definirPeriodo.mockResolvedValue({ dataLiberacao: '2027-01-01', aberta: false });
       service.fecharPeriodo.mockResolvedValue({ dataLiberacao: null, aberta: false });
+      service.addDocument.mockResolvedValue({ status: 'PENDING' });
+      service.replaceDocument.mockResolvedValue({ status: 'PENDING' });
+      service.registerObservation.mockResolvedValue({ status: 'PENDING' });
+      service.decide.mockResolvedValue({ status: 'APPROVED' });
     });
 
     it('reserva os próprios filhos ao responsável autenticado', async () => {
@@ -87,9 +99,40 @@ describe('Rematrícula', () => {
       expect(service.mine).toHaveBeenCalledWith('1');
     });
 
-    it('reserva a lista de análise à coordenação ou administração', async () => {
+    it('permite à Secretaria, Coordenador e Administrador consultar as rematrículas', async () => {
       await request(app.getHttpServer()).get('/renovacoes').set('Authorization', token('RESPONSAVEL')).expect(403);
       await request(app.getHttpServer()).get('/renovacoes').set('Authorization', token('COORDENADOR')).expect(200);
+      await request(app.getHttpServer()).get('/renovacoes').set('Authorization', token('SECRETARIA')).expect(200);
+      await request(app.getHttpServer()).get('/renovacoes').set('Authorization', token('ADMINISTRADOR')).expect(200);
+    });
+
+    it('permite operações pendentes à Secretaria e ao Coordenador, mas reserva decisões à coordenação e administração', async () => {
+      const file = Buffer.from('documento pdf');
+      await request(app.getHttpServer()).post('/renovacoes/4/observacoes')
+        .set('Authorization', token('SECRETARIA')).send({ observacao: 'Conferido presencialmente.' }).expect(201);
+      await request(app.getHttpServer()).post('/renovacoes/4/documentos')
+        .set('Authorization', token('SECRETARIA')).field('tipo', 'CERTIFICADO_BATISMO')
+        .attach('documento', file, { filename: 'batismo.pdf', contentType: 'application/pdf' }).expect(201);
+      await request(app.getHttpServer()).put('/renovacoes/4/documentos/CERTIFICADO_BATISMO')
+        .set('Authorization', token('SECRETARIA'))
+        .attach('documento', file, { filename: 'batismo-secretaria.pdf', contentType: 'application/pdf' }).expect(200);
+      await request(app.getHttpServer()).put('/renovacoes/4/documentos/CERTIFICADO_BATISMO')
+        .set('Authorization', token('COORDENADOR'))
+        .attach('documento', file, { filename: 'batismo-atualizado.pdf', contentType: 'application/pdf' }).expect(200);
+      await request(app.getHttpServer()).post('/renovacoes/4/observacoes')
+        .set('Authorization', token('COORDENADOR')).send({ observacao: 'Documento validado.' }).expect(201);
+      await request(app.getHttpServer()).post('/renovacoes/4/observacoes')
+        .set('Authorization', token('RESPONSAVEL')).send({ observacao: 'Não permitido.' }).expect(403);
+      await request(app.getHttpServer()).patch('/renovacoes/4')
+        .set('Authorization', token('SECRETARIA')).send({ status: 'APPROVED' }).expect(403);
+      await request(app.getHttpServer()).patch('/renovacoes/4')
+        .set('Authorization', token('COORDENADOR')).send({ status: 'APPROVED' }).expect(200);
+      await request(app.getHttpServer()).patch('/renovacoes/4')
+        .set('Authorization', token('COORDENADOR')).send({ status: 'REJECTED', observacoes: 'Falta documento.' }).expect(200);
+      expect(service.decide).toHaveBeenNthCalledWith(1, '4', 'APPROVED', undefined, '1');
+      expect(service.decide).toHaveBeenNthCalledWith(2, '4', 'REJECTED', 'Falta documento.', '1');
+      await request(app.getHttpServer()).patch('/renovacoes/4')
+        .set('Authorization', token('ADMINISTRADOR')).send({ status: 'APPROVED' }).expect(200);
     });
 
     it('permite consulta à secretaria, mas apenas o administrador altera ou fecha a liberação', async () => {
@@ -119,6 +162,10 @@ describe('Rematrícula', () => {
     prisma.$queryRaw.mockResolvedValue([{ dataLiberacao: new Date('2000-01-01T00:00:00Z') }]);
     prisma.renovacao.create.mockResolvedValue({ id: 4n, status: 'PENDING' });
     prisma.$transaction.mockImplementation((fn) => fn(prisma));
+    prisma.renovacaoDocumento.findUnique.mockResolvedValue(null);
+    prisma.renovacaoDocumento.create.mockResolvedValue({ id: 8n });
+    prisma.renovacaoDocumento.upsert.mockResolvedValue({ id: 8n });
+    prisma.renovacao.update.mockResolvedValue({ id: 4n });
     storage.uploadBufferDocument.mockImplementation(async (_buffer, _mime, _folder, label) => ({ key: `key-${label}` }));
     storage.deleteObject.mockResolvedValue(undefined);
   });
@@ -210,7 +257,7 @@ describe('Rematrícula', () => {
 
   it('disponibiliza à coordenação links temporários para os arquivos', async () => {
     prisma.renovacao.findMany.mockResolvedValue([{
-      id: 4n, catequizandoId: 2n, ano: year, status: 'PENDING', observacoes: null,
+      id: 4n, catequizandoId: 2n, ano: year, status: 'PENDING', observacoes: 'Análise da Secretaria.',
       comprovanteKey: 'pix-privado', catequizando: { nome: 'Ana' },
       responsavel: { usuario: { nome: 'Maria', email: 'maria@example.invalid', telefone: null } },
       documentos: [{ tipo: 'CERTIDAO_NASCIMENTO', fileKey: 'certidao-privada' }],
@@ -218,9 +265,74 @@ describe('Rematrícula', () => {
     prisma.renovacaoDocumento.findMany.mockResolvedValue([]);
     storage.getPrivateFileUrl.mockImplementation(async (key) => `signed:${key}`);
     const [record] = await service.list();
+    expect(record.observacoes).toBe('Análise da Secretaria.');
     expect(record.comprovanteUrl).toBe('signed:pix-privado');
     expect(record.documentos).toContainEqual({ tipo: 'CERTIDAO_NASCIMENTO', url: 'signed:certidao-privada' });
     expect(storage.getPrivateFileUrl).toHaveBeenCalledWith('certidao-privada');
+  });
+
+  it('registra observações da Secretaria e do Coordenador sem alterar o status PENDING', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ status: 'PENDING', observacoes: null, comprovanteKey: 'pix-key' }]);
+    await expect(service.registerObservation('4', '7', 'Conferido pela Secretaria.'))
+      .resolves.toEqual({ status: 'PENDING' });
+    expect(prisma.renovacao.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 4n },
+      data: { observacoes: expect.stringContaining('OBSERVACAO (usuário 7): Conferido pela Secretaria.') },
+    }));
+    expect(prisma.renovacao.update).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: expect.anything() }),
+    }));
+  });
+
+  it('adiciona um documento à rematrícula pendente e registra a operação', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ status: 'PENDING', observacoes: 'Observação existente', comprovanteKey: 'pix-key' }]);
+    await expect(service.addDocument('4', '7', 'CERTIFICADO_BATISMO', file))
+      .resolves.toEqual({ status: 'PENDING', tipo: 'CERTIFICADO_BATISMO' });
+    expect(prisma.renovacaoDocumento.create).toHaveBeenCalledWith({
+      data: { renovacaoId: 4n, tipo: 'CERTIFICADO_BATISMO', fileKey: 'key-certificado_batismo' },
+    });
+    expect(prisma.renovacao.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { observacoes: expect.stringContaining('Observação existente\n[') },
+    }));
+  });
+
+  it('substitui documento e comprovante Pix sem remover arquivo anterior antes da gravação', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ status: 'PENDING', observacoes: null, comprovanteKey: 'pix-antigo' }]);
+    prisma.renovacaoDocumento.findUnique.mockResolvedValue({ fileKey: 'documento-antigo' });
+    await service.replaceDocument('4', '7', 'CERTIFICADO_BATISMO', file);
+    expect(prisma.renovacaoDocumento.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { renovacaoId_tipo: { renovacaoId: 4n, tipo: 'CERTIFICADO_BATISMO' } },
+      update: { fileKey: 'key-certificado_batismo' },
+    }));
+    expect(storage.deleteObject).toHaveBeenCalledWith('documento-antigo');
+
+    storage.deleteObject.mockClear();
+    await service.replaceDocument('4', '7', 'COMPROVANTE_PIX', file);
+    expect(prisma.renovacao.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { comprovanteKey: 'key-comprovante_pix' },
+    }));
+    expect(storage.deleteObject).toHaveBeenCalledWith('pix-antigo');
+  });
+
+  it.each(['APPROVED', 'REJECTED'])('bloqueia operações documentais quando status é %s', async (status) => {
+    prisma.$queryRaw.mockResolvedValue([{ status, observacoes: null, comprovanteKey: 'pix-key' }]);
+    await expect(service.registerObservation('4', '7', 'Não permitido.')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.addDocument('4', '7', 'CERTIFICADO_BATISMO', file)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.replaceDocument('4', '7', 'CERTIFICADO_BATISMO', file)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.renovacao.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['APPROVED', 'REJECTED'] as const)('registra a decisão %s preservando as observações anteriores', async (status) => {
+    prisma.$queryRaw.mockResolvedValue([{ status: 'PENDING', observacoes: 'Análise da Secretaria.', comprovanteKey: 'pix-key' }]);
+    await expect(service.decide('4', status, status === 'REJECTED' ? 'Documento ilegível.' : undefined, '8'))
+      .resolves.toEqual({ status });
+    expect(prisma.renovacao.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 4n },
+      data: expect.objectContaining({
+        status,
+        observacoes: expect.stringContaining('Análise da Secretaria.\n['),
+      }),
+    }));
   });
 
   it('limpa os arquivos novos se o registro falhar', async () => {
@@ -231,12 +343,17 @@ describe('Rematrícula', () => {
 
   it('permite reenviar solicitação recusada e descarta arquivos antigos após salvar', async () => {
     prisma.renovacao.findUnique.mockResolvedValue({
-      id: 4n, status: 'REJECTED', comprovanteKey: 'pix-antigo', documentos: [{ fileKey: 'doc-antigo' }],
+      id: 4n, status: 'REJECTED', observacoes: 'Motivo da rejeição.', comprovanteKey: 'pix-antigo',
+      documentos: [{ fileKey: 'doc-antigo' }],
     });
     prisma.renovacao.updateMany.mockResolvedValue({ count: 1 });
     await expect(service.create('7', '2', year, files)).resolves.toEqual({ id: '4', status: 'PENDING' });
     expect(prisma.renovacao.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 4n, status: 'REJECTED' },
+      data: expect.objectContaining({
+        status: 'PENDING',
+        observacoes: expect.stringContaining('Motivo da rejeição.\n['),
+      }),
     }));
     expect(storage.deleteObject).toHaveBeenCalledWith('pix-antigo');
     expect(storage.deleteObject).toHaveBeenCalledWith('doc-antigo');
@@ -245,6 +362,6 @@ describe('Rematrícula', () => {
   it('não aceita segunda solicitação pendente e exige motivo de recusa', async () => {
     prisma.renovacao.findUnique.mockResolvedValue({ id: 4n, status: 'PENDING' });
     await expect(service.create('7', '2', year, files)).rejects.toBeInstanceOf(ConflictException);
-    await expect(service.decide('4', 'REJECTED', ' ')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.decide('4', 'REJECTED', ' ', '8')).rejects.toBeInstanceOf(BadRequestException);
   });
 });

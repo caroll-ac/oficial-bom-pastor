@@ -426,7 +426,9 @@ export default function CoordenadorMatriculasPage() {
               {podeDecidir && !enviando && ["PENDENTE", "AGUARDANDO_COORDENADOR"].includes(detalhe.status) && (
                 <Button variant="outline" asChild>
                   <Link to={`/secretaria/matriculas?protocolo=${encodeURIComponent(detalhe.protocolo)}`}>Operações e observações desta matrícula</Link>
-              {detalhe.status === "APROVADA" && (
+                  </Button>
+              )}
+              {detalhe.status === "APROVADA" && ( 
                 <Button type="button" variant="outline" disabled={enviando} onClick={() => void reenviarEmail()}>
                   {enviando ? "Enviando..." : "Reenviar e-mail de aprovação"}
                 </Button>
